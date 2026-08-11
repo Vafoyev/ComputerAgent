@@ -1,16 +1,17 @@
 # 🤖 Humanoid Robot & JARVIS Assistant - Foydalanuvchi Qo'llanmasi (User Manual)
 
-Ushbu hujjat **JARVIS Voice Assistant & Humanoid Robot Integration Service** loyihasidan foydalanish, uni gumanoid robotga ulash, REST API so'rovlarini yuborish, **Dinamik HTML UI Generator** va mahalliy muhitda sozlash bo'yicha to'liq qo'llanmadir.
+Ushbu hujjat **JARVIS Voice Assistant & Humanoid Robot Integration Service** loyihasidan foydalanish, uni gumanoid robotga ulash, REST API so'rovlarini yuborish, **Dinamik HTML UI Generator** va **Klaviatura Klavish Ovoz Effekti ("tq tq tq")** bo'yicha to'liq qo'llanmadir.
 
 ---
 
 ## 📌 1. Tizim haqida umumiy ma'lumot
 
-Ushbu servis 3 ta asosiy funksional qismdan iborat:
+Ushbu servis 4 ta asosiy foydalanuvchi tajribasiga (UX) ega:
 
-1. **Ovozli Yordamchi Rejimi (Voice Mode):** Mikrofon orqali o'zbekcha ovozli buyruqlarni eshitib, Gemini AI yordamida Windows tizimini boshqaradi va javobni ovozda (`edge-tts`) aytadi.
-2. **Gumanoid Robot API Rejimi (Headless/Silent Mode):** Robot mahalliy tarmoq (IP:Port) orqali HTTP REST API so'rovlarini yuboradi. Servis vazifani bajaradi, dinamikdan ovoz chiqarmaydi (ovozsiz rejim) va to'liq bajarilish holati haqida JSON formatida robotga javob qaytaradi.
-3. **Dinamik AI HTML Generator (Dynamic WebView Generator):** Robot yoki foydalanuvchi murakkab topshiriq (vizual panel, grafik, status dashboard) yuborganida, Gemini AI avtomatik tarzda chiroyli HTML/CSS/JS vizual interfeys kodini yaratadi va uni brauzer/webview oynasida namoyish etadi.
+1. **Vizual Kartalar va Interfeys (Clean UI Cards):** Quruq konsol loglari o'rniga, foydalanuvchiga faqat kerakli bo'lgan chiroyli vizual kartalar, status widgetlari va natija panellari ko'rsatiladi.
+2. **Klaviatura Ovoz Effekti ("Tq-Tq-Tq" Typing SFX):** AI HTML generatsiya qilayotganda va kompyuterda buyruqlar yozilayotganda orqa fonda mexanik klaviatura bosilish ovozi (`tq tq tq`) eshitilib turadi.
+3. **Gumanoid Robot API Rejimi (Headless/Silent Mode):** Robot mahalliy tarmoq (IP:Port) orqali HTTP REST API so'rovlarini yuboradi. Servis vazifani bajaradi, dinamikdan javobni ovozda aytmaydi (ovozsiz rejim) va to'liq bajarilish holati haqida JSON formatida robotga javob qaytaradi.
+4. **Dinamik AI HTML Generator (Dynamic WebView Generator):** Murakkab topshiriqlar uchun Gemini AI avtomatik tarzda HTML/CSS/JS vizual interfeys kodini yaratadi va uni brauzer/webview oynasida namoyish etadi.
 
 ---
 
@@ -38,17 +39,9 @@ Dastur ishga tushgach:
 
 ---
 
-## 🎨 3. Dinamik AI HTML WebView Generator Qanday Ishlaydi?
+## 📡 3. Gumanoid Robot uchun REST API Hujjatlari
 
-1. **Topshiriq Qabul Qilish:** Robot yoki foydalanuvchi vizual interfeys yoki statistik ma'lumot talab qiluvchi vazifa yuboradi.
-2. **HTML Generatsiya:** Gemini AI avtomatik ravishda zamonaviy (glassmorphism, neon, animatsiyali) HTML/CSS/JS kodini shakllantiradi.
-3. **Avto-WebView / Brauzer:** Yaratilgan HTML fayl `generated_views/` papkasida saqlanib, brauzerda (yoki WebView oynasida) `http://127.0.0.1:5000/view/<view_id>` manzili orqali avtomatik ochiladi va ko'rsatiladi.
-
----
-
-## 📡 4. Gumanoid Robot uchun REST API Hujjatlari
-
-### 4.1. Robot Vazifa Yuborishi (Task Execution)
+### 3.1. Robot Vazifa Yuborishi (Task Execution)
 
 - **Endpoint:** `POST /api/task`
 - **Header:** `Content-Type: application/json`
@@ -56,10 +49,9 @@ Dastur ishga tushgach:
 
 ```json
 {
-  "task": "Gumanoid robot monitoring paneli uchun HTML UI yarat va Chrome brauzerini och",
+  "task": "Chrome brauzerini ochib robotehnika bo'yicha izla",
   "robot_id": "gumanoid_robot_01",
-  "silent": true,
-  "generate_ui": true
+  "silent": true
 }
 ```
 
@@ -69,36 +61,17 @@ Dastur ishga tushgach:
 {
   "status": "success",
   "robot_id": "gumanoid_robot_01",
-  "task": "Gumanoid robot monitoring paneli uchun HTML UI yarat va Chrome brauzerini och",
-  "ai_response": "HTML monitoring UI yaratildi va ochildi!",
-  "generated_view_url": "http://127.0.0.1:5000/view/view_83921",
-  "command_executed": "start \"\" \"http://127.0.0.1:5000/view/view_83921\"",
+  "task": "Chrome brauzerini ochib robotehnika bo'yicha izla",
+  "ai_response": "Chrome ochilib, robotehnika bo'yicha qidirilmoqda!",
+  "command_executed": "start \"\" \"https://www.google.com/search?q=robotehnika\"",
   "command_type": "url",
-  "execution_time_ms": 450,
+  "execution_time_ms": 320,
   "timestamp": 1723425123
 }
 ```
 
 ---
 
-### 4.2. Servis Holatini Tekshirish (Health Check)
-
-- **Endpoint:** `GET /api/status`
-- **Response Body:**
-
-```json
-{
-  "status": "online",
-  "service": "JARVIS Robot Controller",
-  "active_mode": "headful/silent_api",
-  "html_generator": "enabled",
-  "uptime_seconds": 1240,
-  "system": "Windows 11"
-}
-```
-
----
-
-## 📝 5. Hujjatlashtirish Qoidasi
+## 📝 4. Hujjatlashtirish Qoidasi
 
 Ushbu `USER_GUIDE.md` hujjati loyihaga kiritiladigan har bir yangi funksiya bilan **doimiy ravishda yangilanib boriladi**.
