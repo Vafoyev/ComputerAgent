@@ -1,0 +1,9 @@
+SpeechRecognition
+pyaudio
+google-genai
+pygame
+requests
+gTTS
+edge-tts
+flask
+flask-socketio

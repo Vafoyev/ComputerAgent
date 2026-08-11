@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JARVIS — Ovozli Yordamchi</title>
+    <meta name="description" content="JARVIS — O'zbek tilidagi aqlli ovozli yordamchi">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js" crossorigin="anonymous"></script>
+</head>
+<body>
+    <!-- Animated background grid -->
+    <div class="bg-grid"></div>
+    <div class="bg-glow"></div>
+
+    <div class="container">
+        <!-- Header -->
+        <header>
+            <div class="brand">
+                <div class="brand-icon">J</div>
+                <div>
+                    <h1 class="neon-text">JARVIS</h1>
+                    <p class="subtitle">Ovozli Yordamchi • Uzbek AI</p>
+                </div>
+            </div>
+            <div id="status-indicator" class="status-box">
+                <div class="pulse-ring" id="pulse-ring"></div>
+                <div class="circle idle" id="pulse-circle"></div>
+                <span id="status-text">Kutmoqda...</span>
+            </div>
+        </header>
+
+        <!-- Stats bar -->
+        <div class="stats-bar">
+            <div class="stat">
+                <span class="stat-label">Buyruqlar</span>
+                <span class="stat-value" id="cmd-count">0</span>
+            </div>
+            <div class="stat">
+                <span class="stat-label">Holat</span>
+                <span class="stat-value" id="mode-text">Offline</span>
+            </div>
+            <div class="stat">
+                <span class="stat-label">Tillar</span>
+                <span class="stat-value">O'zbek / UZ</span>
+            </div>
+            <div class="stat">
+                <span class="stat-label">AI Model</span>
+                <span class="stat-value">Gemini 1.5</span>
+            </div>
+        </div>
+
+        <!-- Log terminal -->
+        <main>
+            <div class="terminal-header">
+                <div class="terminal-dots">
+                    <span class="dot red"></span>
+                    <span class="dot yellow"></span>
+                    <span class="dot green"></span>
+                </div>
+                <span class="terminal-title">jarvis@terminal ~ logs</span>
+                <button class="clear-btn" id="clear-btn" onclick="clearLogs()">🗑 Tozalash</button>
+            </div>
+            <div class="logs-container" id="logs">
+                <div class="welcome-msg">
+                    <span class="welcome-icon">⚡</span>
+                    <span>Jarvis ishga tushmoqda...</span>
+                </div>
+            </div>
+        </main>
+
+        <!-- Footer -->
+        <footer>
+            <span>💡 <strong>"Xayr"</strong> yoki <strong>"To'xta"</strong> deb aytib assistantni to'xtatish mumkin</span>
+            <span id="conn-status" class="conn-offline">● Ulanmoqda...</span>
+        </footer>
+    </div>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
