@@ -10,7 +10,7 @@ import threading
 import subprocess
 
 # ============================================================
-#  Ovoz chiqarish: edge-tts (Microsoft - O'zbek tili uz-UZ)
+#  Ovoz chiqarish (TTS Backend Check)
 # ============================================================
 try:
     import edge_tts
@@ -29,11 +29,10 @@ except ImportError:
 if TTS_BACKEND == "pyttsx3":
     import pyttsx3
 
-# edge-tts ovoz: Madina (ayol) yoki Sardor (erkak)
-EDGE_VOICE = "uz-UZ-MadinaNeural"   # "uz-UZ-SardorNeural" — erkak ovoz
+EDGE_VOICE = "uz-UZ-MadinaNeural"  # O'zbek tili ayol ovozi
 
 # ============================================================
-#  Gemini API  (yangi google-genai SDK)
+#  Gemini API
 # ============================================================
 from google import genai
 
@@ -52,22 +51,29 @@ class VoiceAssistant:
             self.engine = pyttsx3.init()
             self.engine.setProperty('rate', 150)
 
-    # ----------------------------------------------------------
-    #  Log chiqarish (emoji xavfsiz)
-    # ----------------------------------------------------------
-    def emit_log(self, msg, msg_type="info"):
-        try:
-            ascii_msg = msg.encode('ascii', errors='replace').decode('ascii')
-            print(f"[{msg_type.upper()}] {ascii_msg}", flush=True)
-        except Exception:
-            pass
-        self.socketio.emit('log', {'msg': msg, 'type': msg_type})
+    def emit_card(self, title, message, card_type="task", details=None):
+        """
+        Konsol loglari o'rniga foydalanuvchi va robot uchun chiroyli Vizual Karta yuborish
+        """
+        payload = {
+            "title": title,
+            "message": message,
+            "type": card_type,  # task, success, info, error, ai, cmd, ui
+            "details": details or {},
+            "timestamp": time.strftime("%H:%M:%S")
+        }
+        self.socketio.emit('card', payload)
 
-    # ----------------------------------------------------------
-    #  Ovoz chiqarish
-    # ----------------------------------------------------------
-    def speak(self, text):
-        self.emit_log(f"[JARVIS] {text}", "agent")
+    def trigger_typing_sfx(self, duration_sec=1.5):
+        """Klaviatura 'tq-tq-tq' chertilish ovozi efektini UI va soket orqali ishga tushirish"""
+        self.socketio.emit('typing_sfx', {'duration': duration_sec})
+
+    def speak(self, text, silent=False):
+        """Ovozda aytish (Robot API rejimida silent=True bo'lganda ovozsiz)"""
+        if silent:
+            return
+
+        self.emit_card("JARVIS Ovoz", text, "ai")
         try:
             if TTS_BACKEND == "edge":
                 self._speak_edge(text)
@@ -77,7 +83,7 @@ class VoiceAssistant:
                 self.engine.say(text)
                 self.engine.runAndWait()
         except Exception as e:
-            self.emit_log(f"Ovoz xatoligi: {str(e)}", "error")
+            self.emit_card("Ovoz Xatosi", str(e), "error")
 
     def _play_mp3(self, path):
         pygame.mixer.music.load(path)
@@ -105,7 +111,7 @@ class VoiceAssistant:
             loop.close()
             self._play_mp3(tmp_path)
         except Exception as e:
-            self.emit_log(f"edge-tts xatolik: {str(e)}", "error")
+            self.emit_card("Edge-TTS Xatosi", str(e), "error")
             self._speak_gtts(text, lang='ru')
 
     def _speak_gtts(self, text, lang='ru'):
@@ -115,211 +121,198 @@ class VoiceAssistant:
         gTTS(text=text, lang=lang).save(tmp_path)
         self._play_mp3(tmp_path)
 
-    # ----------------------------------------------------------
-    #  Mikrofon tekshirish + Windows ruhsat so'rash
-    # ----------------------------------------------------------
-    def open_windows_mic_permission(self):
+    def generate_dynamic_html(self, task_text, ai_response_text):
+        """
+        Gemini AI orqali topshiriq uchun dinamik HTML vizual WebView kartasini generatsiya qilish
+        """
+        self.trigger_typing_sfx(duration_sec=2.0)
+        prompt = f"""Senga topshiriq: Gumanoid robot va foydalanuvchi uchun zamonaviy Cyberpunk/Glassmorphism uslubida HTML vizual sahifa yarat.
+Topshiriq: "{task_text}"
+AI Xulosasi: "{ai_response_text}"
+
+Talablar:
+- Faqat toza HTML code (bitta fayl, ichida CSS va JS bilan).
+- Dark mode, neon ranglar (#00f3ff, #ff007f, #00ff88), zamonaviy shriftlar.
+- Jonli animatsiyalar, vazifa status kartasi, robot holat vidjeti va bajarilgan ishlar paneli bo'lsin.
+- Markdown va ```html teglari YO'Q, FAQAT HTML KODNI QAYTAR!
+"""
         try:
-            subprocess.Popen(
-                'start ms-settings:privacy-microphone',
-                shell=True,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=prompt,
             )
+            html_code = response.text.strip()
+            for prefix in ["```html", "```"]:
+                if html_code.startswith(prefix):
+                    html_code = html_code[len(prefix):]
+            if html_code.endswith("```"):
+                html_code = html_code[:-3]
+
+            view_id = f"view_{int(time.time())}"
+            views_dir = os.path.join(os.path.abspath("."), "generated_views")
+            os.makedirs(views_dir, exist_ok=True)
+            view_path = os.path.join(views_dir, f"{view_id}.html")
+
+            with open(view_path, "w", encoding="utf-8") as f:
+                f.write(html_code.strip())
+
+            view_url = f"http://127.0.0.1:5000/view/{view_id}"
+            self.emit_card("🎨 Dynamic HTML UI Yaratildi", f"Sahifa: {view_url}", "ui", {"url": view_url})
+            return view_url
         except Exception as e:
-            self.emit_log(f"Windows sozlama ochilmadi: {str(e)}", "error")
+            self.emit_card("HTML Generatsiya Xatosi", str(e), "error")
+            return None
 
-    def check_and_request_mic(self):
-        self.emit_log("Qurilmalar tekshirilmoqda...", "info")
-        for attempt in range(3):
-            try:
-                mics = sr.Microphone.list_microphone_names()
-                if len(mics) > 0:
-                    self.emit_log(f"[OK] Mikrofon topildi: {mics[0]}", "neon")
-                    return True
-            except Exception as e:
-                self.emit_log(f"Mikrofon xatoligi: {str(e)}", "error")
-
-            if attempt == 0:
-                self.emit_log("[!] Mikrofon topilmadi!", "error")
-                self.speak(
-                    "Mikrofon topilmadi. "
-                    "Iltimos, ochilgan Windows oynasida mikrofon ruhsatini yoqing."
-                )
-                self.open_windows_mic_permission()
-                self.emit_log(">>> 15 soniya kutilmoqda...", "info")
-                for i in range(15, 0, -1):
-                    self.socketio.emit('log', {'msg': f'    {i} soniya qoldi...', 'type': 'info'})
-                    time.sleep(1)
-            elif attempt == 1:
-                self.emit_log("Yana 5 soniya kutilmoqda...", "error")
-                time.sleep(5)
-
-        self.speak("Mikrofon topilmadi. Mikrafonni ulab, dasturni qaytadan ishga tushiring.")
-        return False
-
-    # ----------------------------------------------------------
-    #  Buyruqni qayta ishlash: Ovoz → Gemini → CMD → Bajar
-    # ----------------------------------------------------------
-    def process_command(self, text):
+    def execute_task(self, text, silent=False, generate_ui=True):
         """
-        1. Ovozdan kelgan matn Gemini ga yuboriladi
-        2. Gemini Windows CMD buyrug'ini yozib beradi
-        3. CMD avtomatik bajariladi
-        4. Natija ovozda aytiladi
+        Asosiy Vazifa Ijrochisi (Ovozli Rejim ham, Robot REST API Rejimi ham shu funksiyani ishlatadi)
         """
-        prompt = f"""Sen JARVIS — Windows kompyuterni boshqaruvchi o'zbek tilidagi AI yordamchisan.
+        start_time = time.time()
+        self.emit_card("📌 Yangi Topshiriq", text, "task")
+        self.trigger_typing_sfx(duration_sec=1.5)
+        self.socketio.emit('status', {'status': 'processing'})
 
-Foydalanuvchi: "{text}"
+        prompt = f"""Sen JARVIS — Gumanoid robot va Windows kompyuterni boshqaruvchi o'zbek tilidagi AI yordamchisan.
 
-Sening vazifang: nima xohlayotganini tushun va Windows CMD buyrug'ini yoz.
+Foydalanuvchi/Robot vazifasi: "{text}"
 
-Javob FAQAT JSON:
+Vazifani tushun va Windows CMD/PowerShell buyrug'ini tayyorla.
+
+Javob FAQAT JSON formatida bo'lsin:
 {{
-  "cmd": "Windows CMD buyrug'i, YOKI URL, YOKI dastur nomi",
-  "response": "O'zbek tilida qisqa javob",
-  "type": "cmd yoki url yoki app yoki reply"
+  "cmd": "Windows CMD/PowerShell buyrug'i, YOKI URL, YOKI dastur nomi",
+  "response": "O'zbek tilida qisqa va tushunarli javob",
+  "type": "cmd yoki url yoki app yoki reply",
+  "need_visual_ui": true
 }}
 
 Misollar:
-- "Android studioni och" → {{"cmd": "Android Studio", "response": "Android Studio ochilmoqda!", "type": "app"}}
-- "Telegramni och" → {{"cmd": "Telegram", "response": "Telegram ochilmoqda!", "type": "app"}}
-- "Chrome och" → {{"cmd": "Google Chrome", "response": "Chrome ochilmoqda!", "type": "app"}}
-- "musiqa qo'y" → {{"cmd": "https://www.youtube.com/results?search_query=uzbek+music", "response": "Musiqa qo'yilmoqda!", "type": "url"}}
-- "Youtube och" → {{"cmd": "https://www.youtube.com", "response": "YouTube ochilmoqda!", "type": "url"}}
-- "Google och" → {{"cmd": "https://www.google.com", "response": "Google ochilmoqda!", "type": "url"}}
-- "Toshkent ob-havosi" → {{"cmd": "https://www.google.com/search?q=Toshkent+ob-havo", "response": "Ob-havo qidirilmoqda!", "type": "url"}}
-- "Kompyuterni o'chir" → {{"cmd": "shutdown /s /t 10", "response": "10 soniyadan keyin o'chiriladi!", "type": "cmd"}}
-- "Salom" → {{"cmd": "", "response": "Salom! Qanday yordam kerak?", "type": "reply"}}
+- "Chrome och va robotehnika izla" → {{"cmd": "https://www.google.com/search?q=robotehnika", "response": "Chrome ochilib, robotehnika qidirilmoqda!", "type": "url", "need_visual_ui": true}}
+- "Telegramni och" → {{"cmd": "Telegram", "response": "Telegram ochilmoqda!", "type": "app", "need_visual_ui": false}}
+- "Kompyuterni o'chir" → {{"cmd": "shutdown /s /t 10", "response": "Sistemani 10 soniyadan keyin o'chirish tayyorlandi", "type": "cmd", "need_visual_ui": false}}
 
-QOIDALAR:
-- "type": "url"  → brauzerda ochiladi
-- "type": "app"  → Dasturlarni (Android Studio, Word, Telegram) Windows qidiruvi orqali ochish
-- "type": "cmd"  → Faqat tizim buyruqlari (shutdown, explorer, cmd)
-- "type": "reply" → faqat gapiraman
-- Faqat toza JSON. Markdown YO'Q.
+QOIDALAR: Faqat toza JSON. Markdown YO'Q.
 """
         try:
-            self.emit_log("Gemini ga yuborilmoqda...", "info")
-            self.socketio.emit('status', {'status': 'processing'})
-
             response = client.models.generate_content(
-                model="gemini-3.5-flash",
+                model="gemini-2.5-flash",
                 contents=prompt,
             )
             result_text = response.text.strip()
 
-            # Markdown tozalash
             for prefix in ["```json", "```"]:
                 if result_text.startswith(prefix):
                     result_text = result_text[len(prefix):]
             if result_text.endswith("```"):
                 result_text = result_text[:-3]
 
-            data     = json.loads(result_text.strip())
-            cmd      = data.get("cmd", "").strip()
-            reply    = data.get("response", "Bajardim.")
+            data = json.loads(result_text.strip())
+            cmd = data.get("cmd", "").strip()
+            reply = data.get("response", "Vazifa bajarildi.")
             cmd_type = data.get("type", "reply")
+            need_visual_ui = data.get("need_visual_ui", False) or generate_ui
 
-            # Log
+            self.emit_card("💡 AI Tahlili", reply, "ai", {"cmd": cmd, "type": cmd_type})
+
+            # Ovoz chiqarish (silent=True bo'lganda ovozsiz)
+            self.speak(reply, silent=silent)
+
+            view_url = None
+            if need_visual_ui:
+                view_url = self.generate_dynamic_html(text, reply)
+
+            # Buyruqni Windows tizimida bajarish
             if cmd:
-                self.emit_log(f"[{cmd_type.upper()}] {cmd}", "neon")
+                self.trigger_typing_sfx(duration_sec=1.0)
+                if cmd_type == "url":
+                    target_url = cmd
+                    if target_url.lower().startswith("start "):
+                        target_url = target_url[6:].strip()
+                    subprocess.Popen(f'start "" "{target_url}"', shell=True)
+                    self.emit_card("🌐 URL Ochildi", target_url, "cmd")
+                elif cmd_type == "app":
+                    try:
+                        import pyautogui
+                        pyautogui.press('win')
+                        time.sleep(0.5)
+                        pyautogui.write(cmd, interval=0.04)
+                        time.sleep(0.4)
+                        pyautogui.press('enter')
+                        self.emit_card("🚀 Dastur Ochildi", cmd, "cmd")
+                    except Exception as e:
+                        ps_script = f"(New-Object -ComObject WScript.Shell).SendKeys('^{{ESC}}'); Start-Sleep -Milliseconds 400; (New-Object -ComObject WScript.Shell).SendKeys('{cmd}'); Start-Sleep -Milliseconds 400; (New-Object -ComObject WScript.Shell).SendKeys('{{ENTER}}')"
+                        subprocess.Popen(f'powershell -c "{ps_script}"', shell=True)
+                        self.emit_card("🚀 PowerShell bilan ochildi", cmd, "cmd")
+                elif cmd_type == "cmd":
+                    subprocess.Popen(cmd, shell=True)
+                    self.emit_card("⚙️ Tizim Buyrug'i Bajarildi", cmd, "cmd")
 
-            # Ovozda ayt
-            self.speak(reply)
+            # WebView URL bo'lsa avtomatik brauzerda ham ochish
+            if view_url and not silent:
+                webbrowser.open(view_url)
 
-            # Bajar
-            if cmd and cmd_type == "url":
-                if cmd.lower().startswith("start "):
-                    cmd = cmd[6:].strip()
-                # Python modullari (webbrowser, os.startfile) xato bersa, to'g'ridan-to'g'ri CMD orqali ochamiz
-                subprocess.Popen(f'start "" "{cmd}"', shell=True)
-            elif cmd and cmd_type == "app":
-                try:
-                    import pyautogui
-                    pyautogui.press('win')
-                    time.sleep(0.8)
-                    pyautogui.write(cmd, interval=0.05)
-                    time.sleep(0.5)
-                    pyautogui.press('enter')
-                except Exception as e:
-                    self.emit_log(f"PyAutoGUI ishlamadi: {e}, PowerShellga o'tilmoqda", "info")
-                    ps_script = f"(New-Object -ComObject WScript.Shell).SendKeys('^{{ESC}}'); Start-Sleep -Milliseconds 500; (New-Object -ComObject WScript.Shell).SendKeys('{cmd}'); Start-Sleep -Milliseconds 500; (New-Object -ComObject WScript.Shell).SendKeys('{{ENTER}}')"
-                    subprocess.Popen(f'powershell -c "{ps_script}"', shell=True)
-            elif cmd and cmd_type == "cmd":
-                subprocess.Popen(cmd, shell=True)
+            elapsed_ms = int((time.time() - start_time) * 1000)
+            self.socketio.emit('status', {'status': 'idle'})
 
-        except json.JSONDecodeError:
-            self.emit_log("JSON parse xatoligi.", "error")
-            try:
-                self.speak(response.text[:200])
-            except Exception:
-                self.speak("Xatolik yuz berdi.")
+            return {
+                "status": "success",
+                "task": text,
+                "ai_response": reply,
+                "command_executed": cmd,
+                "command_type": cmd_type,
+                "generated_view_url": view_url,
+                "execution_time_ms": elapsed_ms,
+                "timestamp": int(time.time())
+            }
+
         except Exception as e:
-            self.emit_log(f"Gemini xatoligi: {str(e)}", "error")
-            self.speak("Kechirasiz, xatolik yuz berdi.")
+            self.emit_card("Xatolik", str(e), "error")
+            self.socketio.emit('status', {'status': 'idle'})
+            return {
+                "status": "error",
+                "task": text,
+                "error": str(e),
+                "timestamp": int(time.time())
+            }
 
-    # ----------------------------------------------------------
-    #  Asosiy tinglash sikli
-    # ----------------------------------------------------------
     def start(self):
+        """Ovozli rejim asosiy sikli"""
         with self._lock:
             if self.is_running:
                 return
             self.is_running = True
 
         try:
-            if not self.check_and_request_mic():
-                self.is_running = False
-                return
+            self.emit_card("JARVIS Faol", "Ovozli muloqot tayyor!", "info")
+            self.speak("Salom! Men Jarvisman, sizning ovozli yordamchingiz hamda gumanoid robot boshqaruvchisiman.")
 
-            self.speak("Salom! Men Jarvisman, sizning ovozli yordamchingiz. Qanday yordam kerak? Buyuring.")
-            self.emit_log("[TAYYOR] Jarvis faol! Gapiring...", "neon")
-
-            self.emit_log("Shovqin darajasi moslanmoqda...", "info")
             with sr.Microphone() as source:
                 self.recognizer.adjust_for_ambient_noise(source, duration=1.5)
-            self.emit_log("[OK] Eshitish boshlandi.", "neon")
 
             while self.is_running:
                 try:
                     self.socketio.emit('status', {'status': 'listening'})
-                    self.emit_log("[ Eshityapman... ]", "info")
-
                     with sr.Microphone() as source:
                         audio = self.recognizer.listen(source, timeout=7, phrase_time_limit=12)
 
                     self.socketio.emit('status', {'status': 'processing'})
-                    self.emit_log("Ovoz tahlil qilinmoqda...", "info")
-
                     text = self.recognizer.recognize_google(audio, language="uz-UZ")
-                    self.emit_log(f"Siz: {text}", "user")
 
-                    # Chiqish buyruqlari
                     exit_words = ["xayr", "chiqish", "toxta", "to'xta", "stop"]
                     if any(w in text.lower() for w in exit_words):
                         self.speak("Xayr! Salomat bo'ling.")
                         self.is_running = False
                         break
 
-                    self.process_command(text)
+                    self.execute_task(text, silent=False, generate_ui=True)
 
-                except sr.WaitTimeoutError:
-                    self.emit_log("Ovoz eshitilmadi, kutmoqda...", "info")
-                    continue
-                except sr.UnknownValueError:
-                    self.emit_log("Ovoz tushunilmadi, qayta uring.", "info")
+                except (sr.WaitTimeoutError, sr.UnknownValueError):
                     continue
                 except sr.RequestError as e:
-                    self.emit_log(f"Google ulanish xatoligi: {str(e)}", "error")
-                    self.speak("Internetga ulanishda xatolik.")
+                    self.emit_card("Google Speech Xatosi", str(e), "error")
                     break
                 except Exception as e:
-                    self.emit_log(f"Kutilmagan xatolik: {str(e)}", "error")
-
-        except Exception as e:
-            self.emit_log(f"Asosiy jarayonda xatolik: {str(e)}", "error")
+                    self.emit_card("Kutilmagan Xatosi", str(e), "error")
         finally:
             self.is_running = False
             self.socketio.emit('status', {'status': 'idle'})
-            self.emit_log("Jarvis toxtatildi.", "info")

@@ -1,38 +1,89 @@
 // ============================================================
-//  JARVIS — Web Terminal Script
+//  JARVIS — Gumanoid Robot & Web Control Script
 // ============================================================
 const socket = io();
-const logsEl    = document.getElementById('logs');
+const cardsFeed = document.getElementById('cards-feed');
 const statusTxt = document.getElementById('status-text');
 const circle    = document.getElementById('pulse-circle');
 const connEl    = document.getElementById('conn-status');
 const cmdCount  = document.getElementById('cmd-count');
-const modeTxt   = document.getElementById('mode-text');
 
 let commands = 0;
 
 // ------------------------------------------------------------
-//  Socket events
+//  Web Audio API Mechanical Keyboard SFX Synthesizer ("tq-tq-tq")
+// ------------------------------------------------------------
+const AudioContext = window.AudioContext || window.webkitAudioContext;
+let audioCtx = null;
+
+function getAudioContext() {
+    if (!audioCtx) {
+        audioCtx = new AudioContext();
+    }
+    if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+    }
+    return audioCtx;
+}
+
+function playClickSound() {
+    try {
+        const ctx = getAudioContext();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        // Realistic mechanical key press click frequency
+        const freq = 1200 + Math.random() * 800;
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(100, ctx.currentTime + 0.03);
+
+        gain.gain.setValueAtTime(0.08, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.03);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        osc.start();
+        osc.stop(ctx.currentTime + 0.035);
+    } catch (e) {
+        // Audio context handling
+    }
+}
+
+function triggerTypingSequence(durationSec) {
+    const totalClicks = Math.floor((durationSec || 1.5) * 12);
+    let count = 0;
+    const interval = setInterval(() => {
+        playClickSound();
+        count++;
+        if (count >= totalClicks) {
+            clearInterval(interval);
+        }
+    }, 70 + Math.random() * 40);
+}
+
+// ------------------------------------------------------------
+//  Socket Event Handlers
 // ------------------------------------------------------------
 socket.on('connect', () => {
-    connEl.textContent = '● Ulandi';
+    connEl.textContent = '● Robot Server Ulandi';
     connEl.className = 'conn-online';
-    addLog('🟢 Server bilan ulanish o\'rnatildi.', 'neon');
-    modeTxt.textContent = 'Online';
 });
 
 socket.on('disconnect', () => {
-    connEl.textContent = '● Uzildi';
+    connEl.textContent = '● Server Uzildi';
     connEl.className = 'conn-offline';
-    addLog('🔴 Server bilan ulanish uzildi.', 'error');
-    modeTxt.textContent = 'Offline';
     setStatus('idle');
 });
 
-socket.on('log', (data) => {
-    addLog(data.msg, data.type || 'info');
-    // User messages = command count
-    if (data.type === 'user') {
+socket.on('typing_sfx', (data) => {
+    triggerTypingSequence(data.duration || 1.5);
+});
+
+socket.on('card', (data) => {
+    addVisualCard(data);
+    if (data.type === 'task' || data.type === 'cmd') {
         commands++;
         cmdCount.textContent = commands;
     }
@@ -43,65 +94,77 @@ socket.on('status', (data) => {
 });
 
 // ------------------------------------------------------------
-//  Status indicator
+//  Status Indicator
 // ------------------------------------------------------------
 function setStatus(status) {
     circle.className = 'circle';
     if (status === 'listening') {
         circle.classList.add('listening');
         statusTxt.textContent = 'Eshityapman...';
-        modeTxt.textContent = 'Tinglash';
     } else if (status === 'processing') {
         circle.classList.add('processing');
         statusTxt.textContent = 'O\'ylayapman...';
-        modeTxt.textContent = 'Ishlayapman';
     } else {
         circle.classList.add('idle');
         statusTxt.textContent = 'Kutmoqda...';
-        modeTxt.textContent = 'Kutish';
     }
 }
 
 // ------------------------------------------------------------
-//  Add log entry
+//  Clean Visual Cards Renderer (Not plaintext logs!)
 // ------------------------------------------------------------
-function addLog(message, type) {
-    // Remove welcome placeholder
-    const welcome = logsEl.querySelector('.welcome-msg');
-    if (welcome) welcome.remove();
+function addVisualCard(data) {
+    const emptyFeed = document.getElementById('empty-feed');
+    if (emptyFeed) emptyFeed.remove();
 
-    const now = new Date();
-    const timeStr = now.toLocaleTimeString('uz-UZ', {
-        hour: '2-digit', minute: '2-digit', second: '2-digit'
-    });
+    const card = document.createElement('div');
+    const cardType = data.type || 'info';
+    card.className = `card card-${cardType}`;
 
-    const entry = document.createElement('div');
-    entry.className = `log-entry log-${type}`;
+    const iconMap = {
+        task: '📌',
+        ai: '💡',
+        cmd: '⚙️',
+        ui: '🎨',
+        success: '🟢',
+        error: '❌',
+        info: 'ℹ️'
+    };
 
-    const timeSpan = document.createElement('span');
-    timeSpan.className = 'log-time';
-    timeSpan.textContent = timeStr;
+    const icon = iconMap[cardType] || '⚡';
+    const timestamp = data.timestamp || new Date().toLocaleTimeString('uz-UZ', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
-    const msgSpan = document.createElement('span');
-    msgSpan.className = 'log-msg';
-    msgSpan.textContent = message;
+    let extraHTML = '';
+    if (data.details && data.details.url) {
+        extraHTML = `<a href="${data.details.url}" target="_blank" class="card-btn">🌐 UI Sahifasini Ochish</a>`;
+    } else if (data.details && data.details.cmd) {
+        extraHTML = `<div class="card-code"><code>${data.details.cmd}</code></div>`;
+    }
 
-    entry.appendChild(timeSpan);
-    entry.appendChild(msgSpan);
-    logsEl.appendChild(entry);
+    card.innerHTML = `
+        <div class="card-header">
+            <span class="card-icon">${icon}</span>
+            <span class="card-title">${data.title || 'Xabar'}</span>
+            <span class="card-time">${timestamp}</span>
+        </div>
+        <div class="card-body">
+            <p>${data.message || ''}</p>
+            ${extraHTML}
+        </div>
+    `;
 
-    // Auto-scroll
-    logsEl.scrollTop = logsEl.scrollHeight;
+    cardsFeed.appendChild(card);
+    cardsFeed.scrollTop = cardsFeed.scrollHeight;
 
-    // Keep max 200 log entries
-    while (logsEl.children.length > 200) {
-        logsEl.removeChild(logsEl.firstChild);
+    // Trigger subtle click sound for visual feedback
+    playClickSound();
+
+    // Maintain max 100 visual cards
+    while (cardsFeed.children.length > 100) {
+        cardsFeed.removeChild(cardsFeed.firstChild);
     }
 }
 
-// ------------------------------------------------------------
-//  Clear logs
-// ------------------------------------------------------------
-function clearLogs() {
-    logsEl.innerHTML = '<div class="welcome-msg"><span class="welcome-icon">🧹</span><span>Loglar tozalandi.</span></div>';
+function clearCards() {
+    cardsFeed.innerHTML = '<div class="empty-feed" id="empty-feed"><div class="empty-icon">🧹</div><h3>Kartalar Tozalandi</h3></div>';
 }

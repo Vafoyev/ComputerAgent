@@ -1,9 +1,9 @@
-SpeechRecognition
-pyaudio
-google-genai
-pygame
-requests
-gTTS
-edge-tts
 flask
 flask-socketio
+google-genai
+SpeechRecognition
+pygame
+edge-tts
+gTTS
+pyttsx3
+pyautogui
