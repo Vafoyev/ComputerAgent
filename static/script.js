@@ -1,5 +1,5 @@
 // ============================================================
-//  JARVIS — Gumanoid Robot & Web Control Script
+//  JARVIS Neural Core — Gumanoid Robot & Web Control Script
 // ============================================================
 const socket = io();
 const cardsFeed = document.getElementById('cards-feed');
@@ -32,7 +32,6 @@ function playClickSound() {
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
 
-        // Realistic mechanical key press click frequency
         const freq = 1200 + Math.random() * 800;
         osc.type = 'sine';
         osc.frequency.setValueAtTime(freq, ctx.currentTime);
@@ -47,7 +46,7 @@ function playClickSound() {
         osc.start();
         osc.stop(ctx.currentTime + 0.035);
     } catch (e) {
-        // Audio context handling
+        // Audio handling
     }
 }
 
@@ -67,7 +66,7 @@ function triggerTypingSequence(durationSec) {
 //  Socket Event Handlers
 // ------------------------------------------------------------
 socket.on('connect', () => {
-    connEl.textContent = '● Robot Server Ulandi';
+    connEl.textContent = '● Robot Server Ulandi (Neural Core v3.0)';
     connEl.className = 'conn-online';
 });
 
@@ -79,6 +78,12 @@ socket.on('disconnect', () => {
 
 socket.on('typing_sfx', (data) => {
     triggerTypingSequence(data.duration || 1.5);
+});
+
+socket.on('stage_update', (data) => {
+    if (data.stage && data.description) {
+        statusTxt.textContent = `${data.description} (${data.progress}%)`;
+    }
 });
 
 socket.on('card', (data) => {
@@ -103,15 +108,15 @@ function setStatus(status) {
         statusTxt.textContent = 'Eshityapman...';
     } else if (status === 'processing') {
         circle.classList.add('processing');
-        statusTxt.textContent = 'O\'ylayapman...';
+        statusTxt.textContent = 'Neural Core Tahlil qilmoqda...';
     } else {
         circle.classList.add('idle');
-        statusTxt.textContent = 'Kutmoqda...';
+        statusTxt.textContent = 'Robot So'rovi Kutilmoqda...';
     }
 }
 
 // ------------------------------------------------------------
-//  Clean Visual Cards Renderer (Not plaintext logs!)
+//  Clean Visual Cards Renderer
 // ------------------------------------------------------------
 function addVisualCard(data) {
     const emptyFeed = document.getElementById('empty-feed');
@@ -123,7 +128,7 @@ function addVisualCard(data) {
 
     const iconMap = {
         task: '📌',
-        ai: '💡',
+        ai: '🧠',
         cmd: '⚙️',
         ui: '🎨',
         success: '🟢',
@@ -138,7 +143,8 @@ function addVisualCard(data) {
     if (data.details && data.details.url) {
         extraHTML = `<a href="${data.details.url}" target="_blank" class="card-btn">🌐 UI Sahifasini Ochish</a>`;
     } else if (data.details && data.details.cmd) {
-        extraHTML = `<div class="card-code"><code>${data.details.cmd}</code></div>`;
+        let outStr = data.details.output ? `<br><small style="color:#00ff88;">Output: ${data.details.output}</small>` : '';
+        extraHTML = `<div class="card-code"><code>${data.details.cmd}</code>${outStr}</div>`;
     }
 
     card.innerHTML = `
@@ -156,10 +162,8 @@ function addVisualCard(data) {
     cardsFeed.appendChild(card);
     cardsFeed.scrollTop = cardsFeed.scrollHeight;
 
-    // Trigger subtle click sound for visual feedback
     playClickSound();
 
-    // Maintain max 100 visual cards
     while (cardsFeed.children.length > 100) {
         cardsFeed.removeChild(cardsFeed.firstChild);
     }

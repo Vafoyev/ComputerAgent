@@ -10,7 +10,7 @@ import threading
 import subprocess
 
 # ============================================================
-#  Ovoz chiqarish (TTS Backend Check)
+#  Ovoz chiqarish (TTS Backend)
 # ============================================================
 try:
     import edge_tts
@@ -29,10 +29,10 @@ except ImportError:
 if TTS_BACKEND == "pyttsx3":
     import pyttsx3
 
-EDGE_VOICE = "uz-UZ-MadinaNeural"  # O'zbek tili ayol ovozi
+EDGE_VOICE = "uz-UZ-MadinaNeural"
 
 # ============================================================
-#  Gemini API
+#  Gemini API Neural Core
 # ============================================================
 from google import genai
 
@@ -51,6 +51,46 @@ def get_genai_client():
             return None
     return None
 
+# ============================================================
+#  PROFESSIONAL SYSTEM PROMPTS
+# ============================================================
+COMMAND_DISPATCHER_SYSTEM_PROMPT = """Sen JARVIS Neural Core — Gumanoid Robot va Windows Operatsion Tizimining yuqori darajadagi Avtonom Muhandisisan.
+
+Sening vazifang: Gumanoid robot yoki foydalanuvchidan kelgan har qanday tabiiy tildagi vazifani chuqur tahlil qilib, Windows CMD yoki PowerShell uchun 100% aniq va ishlaydigan terminal buyrug'ini shakllantirishdir.
+
+JAVOB FAQAT TOZA JSON FORMATIDA BO'LISHI SHART (Markdown va har qanday ortiqcha matnsiz):
+{
+  "cmd": "Windows CMD/PowerShell buyrug'i (masalan: start chrome https://google.com, tasklist, shutdown, explorer va h.k.)",
+  "response": "Gumanoid robot va foydalanuvchi uchun o'zbek tilidagi professional va tushunarli javob xulosasi",
+  "type": "cmd | app | url | reply",
+  "need_visual_ui": true,
+  "confidence_score": 0.99
+}
+
+BUYRUQ TURLARI (TYPE):
+- "url"  -> Brauzerda ochilishi kerak bo'lgan veb havolalar va qidiruvlar (start "" "URL")
+- "app"  -> Windows ish stoli dasturlari (Telegram, Android Studio, Code, Notepad, Calc, Word, Excel)
+- "cmd"  -> Tizim buyruqlari (PowerShell, CMD, fayl boshqaruvi, diagnostika, jarayonlar)
+- "reply" -> Faqat ma'lumot beruvchi matnli javoblar
+
+QOIDALAR:
+1. Windows muhitiga mos keluvchi sintaksis ishlatilsin.
+2. Markdown syntax (```json ...) umuman bo'lmasin. Faqat toza parse bo'ladigan JSON qaytar.
+"""
+
+HTML_GENERATOR_SYSTEM_PROMPT = """Sen Ultra-Modern UI/UX Muhandisisan. Gumanoid robot va foydalanuvchi uchun davrining eng yetakchi Cyberpunk, Futuristic Glassmorphism uslubida HTML Dashboard / WebView sahifalarini generate qilasan.
+
+TALABLAR:
+1. Faqat bitta toza HTML fayl (ichida CSS <style> va JS <script> bilan).
+2. Vizual dizayn: Dark theme (#06080e), Neon Cyber ko'k (#00f3ff), Neon Pushti (#ff007f), Neon Yashil (#00ff88), Glassmorphism backdrop blur effect.
+3. Sahifada quyidagi modullar bo'lsin:
+   - Header: Gumanoid Robot telemetry statusi (Online, CPU Load, Sync State).
+   - Vazifa kartasi: Topshiriq matni va AI tahlili.
+   - Bajarilish progress-bari (animated loader / glowing meter).
+   - Real-vaqtli interaktiv tugmalar (Refresh, Task Details, Robot HUD toggle).
+4. Markdown teglari (```html) bo'lmasin, toza HTML kodini ber!
+"""
+
 
 class VoiceAssistant:
     def __init__(self, socketio):
@@ -64,20 +104,27 @@ class VoiceAssistant:
             self.engine.setProperty('rate', 150)
 
     def emit_card(self, title, message, card_type="task", details=None):
-        """
-        Konsol loglari o'rniga foydalanuvchi va robot uchun chiroyli Vizual Karta yuborish
-        """
+        """Vizual Dashboard uchun ma'lumot uzatish"""
         payload = {
             "title": title,
             "message": message,
-            "type": card_type,  # task, success, info, error, ai, cmd, ui
+            "type": card_type,
             "details": details or {},
             "timestamp": time.strftime("%H:%M:%S")
         }
         self.socketio.emit('card', payload)
 
+    def emit_stage(self, stage_name, description, progress_pct=0):
+        """Bosqichma-bosqich jarayon telemetriyasi"""
+        self.socketio.emit('stage_update', {
+            "stage": stage_name,
+            "description": description,
+            "progress": progress_pct,
+            "timestamp": time.strftime("%H:%M:%S")
+        })
+
     def trigger_typing_sfx(self, duration_sec=1.5):
-        """Klaviatura 'tq-tq-tq' chertilish ovozi efektini UI va soket orqali ishga tushirish"""
+        """Klaviatura 'tq-tq-tq' sado efektini ishga tushirish"""
         self.socketio.emit('typing_sfx', {'duration': duration_sec})
 
     def speak(self, text, silent=False):
@@ -134,19 +181,14 @@ class VoiceAssistant:
         self._play_mp3(tmp_path)
 
     def generate_dynamic_html(self, task_text, ai_response_text):
-        """
-        Gemini AI orqali topshiriq uchun dinamik HTML vizual WebView kartasini generatsiya qilish
-        """
+        """Dynamic HTML Generator"""
+        self.emit_stage("html_generation", "AI Dinamik HTML WebView interfeysi yaratmoqda...", 50)
         self.trigger_typing_sfx(duration_sec=2.0)
-        prompt = f"""Senga topshiriq: Gumanoid robot va foydalanuvchi uchun zamonaviy Cyberpunk/Glassmorphism uslubida HTML vizual sahifa yarat.
-Topshiriq: "{task_text}"
-AI Xulosasi: "{ai_response_text}"
 
-Talablar:
-- Faqat toza HTML code (bitta fayl, ichida CSS va JS bilan).
-- Dark mode, neon ranglar (#00f3ff, #ff007f, #00ff88), zamonaviy shriftlar.
-- Jonli animatsiyalar, vazifa status kartasi, robot holat vidjeti va bajarilgan ishlar paneli bo'lsin.
-- Markdown va ```html teglari YO'Q, FAQAT HTML KODNI QAYTAR!
+        prompt = f"""{HTML_GENERATOR_SYSTEM_PROMPT}
+
+Topshiriq: "{task_text}"
+AI Tahlil Xulosasi: "{ai_response_text}"
 """
         try:
             ai_client = get_genai_client()
@@ -165,21 +207,25 @@ Talablar:
                 html_code = f"""<!DOCTYPE html>
 <html lang="uz">
 <head>
-<meta charset="UTF-8"><title>JARVIS Humanoid Dashboard</title>
+<meta charset="UTF-8"><title>JARVIS Humanoid HUD</title>
 <style>
-body {{ background: #0a0c10; color: #00f3ff; font-family: sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }}
-.card {{ background: rgba(18,22,31,0.9); border: 2px solid #00f3ff; border-radius: 16px; padding: 30px; box-shadow: 0 0 20px rgba(0,243,255,0.3); text-align: center; max-width: 500px; }}
-h1 {{ color: #00ff88; font-size: 1.8rem; margin-bottom: 10px; }}
-p {{ color: #e6edf3; font-size: 1.1rem; line-height: 1.5; }}
-.status {{ background: rgba(0,255,136,0.15); border: 1px solid #00ff88; color: #00ff88; padding: 8px 16px; border-radius: 20px; display: inline-block; margin-top: 15px; font-weight: bold; }}
+body {{ background: #06080e; color: #00f3ff; font-family: 'Segoe UI', Tahoma, sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }}
+.card {{ background: rgba(14, 20, 32, 0.85); border: 2px solid rgba(0, 243, 255, 0.3); border-radius: 20px; padding: 35px; box-shadow: 0 10px 40px rgba(0,243,255,0.25); text-align: center; max-width: 550px; width: 90%; backdrop-filter: blur(20px); }}
+h1 {{ color: #00ff88; font-size: 2rem; margin-bottom: 12px; letter-spacing: 2px; text-transform: uppercase; }}
+p {{ color: #e6edf3; font-size: 1.1rem; line-height: 1.6; margin: 10px 0; }}
+.status-badge {{ background: rgba(0,255,136,0.15); border: 1px solid #00ff88; color: #00ff88; padding: 10px 20px; border-radius: 30px; display: inline-block; margin-top: 20px; font-weight: bold; text-shadow: 0 0 8px rgba(0,255,136,0.5); }}
+.meter {{ width: 100%; height: 8px; background: rgba(255,255,255,0.1); border-radius: 4px; overflow: hidden; margin-top: 20px; }}
+.meter-bar {{ width: 100%; height: 100%; background: linear-gradient(90deg, #00f3ff, #00ff88); animation: pulse 2s infinite; }}
+@keyframes pulse {{ 0% {{ opacity: 0.6; }} 50% {{ opacity: 1; }} 100% {{ opacity: 0.6; }} }}
 </style>
 </head>
 <body>
 <div class="card">
-  <h1>🤖 Gumanoid Robot Dashbordi</h1>
+  <h1>🤖 HUMANOID ROBOT HUD</h1>
   <p><strong>Topshiriq:</strong> {task_text}</p>
-  <p><strong>AI Natijasi:</strong> {ai_response_text}</p>
-  <div class="status">🟢 Tizim va Robot Holati: Faol</div>
+  <p><strong>AI Tahlil:</strong> {ai_response_text}</p>
+  <div class="meter"><div class="meter-bar"></div></div>
+  <div class="status-badge">🟢 Tizim va Robot Holati: Sinxronizatsiyada</div>
 </div>
 </body>
 </html>"""
@@ -200,36 +246,19 @@ p {{ color: #e6edf3; font-size: 1.1rem; line-height: 1.5; }}
             return None
 
     def execute_task(self, text, silent=False, generate_ui=True):
-        """
-        Asosiy Vazifa Ijrochisi (Ovozli Rejim ham, Robot REST API Rejimi ham shu funksiyani ishlatadi)
-        """
+        """Professional Multi-Stage Task Executor"""
         start_time = time.time()
+        self.emit_stage("received", f"So'rov qabul qilindi: '{text}'", 10)
         self.emit_card("📌 Yangi Topshiriq", text, "task")
         self.trigger_typing_sfx(duration_sec=1.5)
         self.socketio.emit('status', {'status': 'processing'})
 
-        prompt = f"""Sen JARVIS — Gumanoid robot va Windows kompyuterni boshqaruvchi o'zbek tilidagi AI yordamchisan.
+        prompt = f"""{COMMAND_DISPATCHER_SYSTEM_PROMPT}
 
 Foydalanuvchi/Robot vazifasi: "{text}"
-
-Vazifani tushun va Windows CMD/PowerShell buyrug'ini tayyorla.
-
-Javob FAQAT JSON formatida bo'lsin:
-{{
-  "cmd": "Windows CMD/PowerShell buyrug'i, YOKI URL, YOKI dastur nomi",
-  "response": "O'zbek tilida qisqa va tushunarli javob",
-  "type": "cmd yoki url yoki app yoki reply",
-  "need_visual_ui": true
-}}
-
-Misollar:
-- "Chrome och va robotehnika izla" → {{"cmd": "https://www.google.com/search?q=robotehnika", "response": "Chrome ochilib, robotehnika qidirilmoqda!", "type": "url", "need_visual_ui": true}}
-- "Telegramni och" → {{"cmd": "Telegram", "response": "Telegram ochilmoqda!", "type": "app", "need_visual_ui": false}}
-- "Kompyuterni o'chir" → {{"cmd": "shutdown /s /t 10", "response": "Sistemani 10 soniyadan keyin o'chirish tayyorlandi", "type": "cmd", "need_visual_ui": false}}
-
-QOIDALAR: Faqat toza JSON. Markdown YO'Q.
 """
         try:
+            self.emit_stage("ai_analysis", "Gemini AI Neural Core buyruqni tahlil qilmoqda...", 35)
             ai_client = get_genai_client()
             if ai_client:
                 response = ai_client.models.generate_content(
@@ -250,7 +279,6 @@ QOIDALAR: Faqat toza JSON. Markdown YO'Q.
                 cmd_type = data.get("type", "reply")
                 need_visual_ui = data.get("need_visual_ui", False) or generate_ui
             else:
-                # Smart fallback parse for basic commands when GEMINI_API_KEY is not set
                 lower_text = text.lower()
                 need_visual_ui = generate_ui
                 if "chrome" in lower_text or "google" in lower_text or "izla" in lower_text:
@@ -275,53 +303,63 @@ QOIDALAR: Faqat toza JSON. Markdown YO'Q.
                     reply = f"Topshiriq qabul qilindi: {text}"
 
             self.emit_card("💡 AI Tahlili", reply, "ai", {"cmd": cmd, "type": cmd_type})
-
-            # Ovoz chiqarish (silent=True bo'lganda ovozsiz)
             self.speak(reply, silent=silent)
 
             view_url = None
             if need_visual_ui:
                 view_url = self.generate_dynamic_html(text, reply)
 
-            # Buyruqni Windows tizimida bajarish
+            # Command execution with output & exit code capture
+            cmd_output = ""
+            exit_code = 0
             if cmd:
+                self.emit_stage("execution", f"Windows tizim buyrug'i bajarilmoqda: {cmd}", 80)
                 self.trigger_typing_sfx(duration_sec=1.0)
                 if cmd_type == "url":
                     target_url = cmd
                     if target_url.lower().startswith("start "):
                         target_url = target_url[6:].strip()
-                    subprocess.Popen(f'start "" "{target_url}"', shell=True)
+                    proc = subprocess.Popen(f'start "" "{target_url}"', shell=True)
                     self.emit_card("🌐 URL Ochildi", target_url, "cmd")
                 elif cmd_type == "app":
                     try:
                         import pyautogui
                         pyautogui.press('win')
-                        time.sleep(0.5)
+                        time.sleep(0.4)
                         pyautogui.write(cmd, interval=0.04)
                         time.sleep(0.4)
                         pyautogui.press('enter')
                         self.emit_card("🚀 Dastur Ochildi", cmd, "cmd")
-                    except Exception as e:
+                    except Exception:
                         ps_script = f"(New-Object -ComObject WScript.Shell).SendKeys('^{{ESC}}'); Start-Sleep -Milliseconds 400; (New-Object -ComObject WScript.Shell).SendKeys('{cmd}'); Start-Sleep -Milliseconds 400; (New-Object -ComObject WScript.Shell).SendKeys('{{ENTER}}')"
                         subprocess.Popen(f'powershell -c "{ps_script}"', shell=True)
                         self.emit_card("🚀 PowerShell bilan ochildi", cmd, "cmd")
                 elif cmd_type == "cmd":
-                    subprocess.Popen(cmd, shell=True)
-                    self.emit_card("⚙️ Tizim Buyrug'i Bajarildi", cmd, "cmd")
+                    proc = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                    try:
+                        stdout, stderr = proc.communicate(timeout=5)
+                        cmd_output = stdout.strip() or stderr.strip()
+                        exit_code = proc.returncode
+                    except subprocess.TimeoutExpired:
+                        cmd_output = "Command started in background"
+                    self.emit_card("⚙️ Tizim Buyrug'i Bajarildi", cmd, "cmd", {"output": cmd_output})
 
-            # WebView URL bo'lsa avtomatik brauzerda ham ochish
             if view_url and not silent:
                 webbrowser.open(view_url)
 
             elapsed_ms = int((time.time() - start_time) * 1000)
+            self.emit_stage("completed", "Vazifa muvaffaqiyatli yakunlandi", 100)
             self.socketio.emit('status', {'status': 'idle'})
 
             return {
                 "status": "success",
+                "robot_id": "gumanoid_robot",
                 "task": text,
                 "ai_response": reply,
                 "command_executed": cmd,
                 "command_type": cmd_type,
+                "command_output": cmd_output,
+                "exit_code": exit_code,
                 "generated_view_url": view_url,
                 "execution_time_ms": elapsed_ms,
                 "timestamp": int(time.time())
@@ -329,6 +367,7 @@ QOIDALAR: Faqat toza JSON. Markdown YO'Q.
 
         except Exception as e:
             self.emit_card("Xatolik", str(e), "error")
+            self.emit_stage("failed", f"Xatolik: {str(e)}", 100)
             self.socketio.emit('status', {'status': 'idle'})
             return {
                 "status": "error",
@@ -345,8 +384,8 @@ QOIDALAR: Faqat toza JSON. Markdown YO'Q.
             self.is_running = True
 
         try:
-            self.emit_card("JARVIS Faol", "Ovozli muloqot tayyor!", "info")
-            self.speak("Salom! Men Jarvisman, sizning ovozli yordamchingiz hamda gumanoid robot boshqaruvchisiman.")
+            self.emit_card("JARVIS Neural Core Faol", "Ovozli va Robot API muloqot tayyor!", "info")
+            self.speak("Salom! Men Jarvis Neural Core — sizning ovozli yordamchingiz hamda gumanoid robot boshqaruvchisiman.")
 
             with sr.Microphone() as source:
                 self.recognizer.adjust_for_ambient_noise(source, duration=1.5)
