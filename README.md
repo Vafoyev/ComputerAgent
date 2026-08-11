@@ -105,6 +105,7 @@ curl -X POST http://127.0.0.1:5000/api/task \
 
 ---
 
-## 📜 Full User Guide
+## 📜 Documentation & Guides (Hujjatlar va Qo'llanmalar)
 
-To'liq foydalanuvchi va robot qo'llanmasi uchun **[USER_GUIDE.md](USER_GUIDE.md)** fayliga qarang.
+- 🤖 **[ROBOT_CONNECT_GUIDE.md](ROBOT_CONNECT_GUIDE.md):** Gumanoid robotlarni (Python, C++, ROS2, Node.js, cURL) ulash bo'yicha to'liq amaliy integratsiya qo'llanmasi.
+- 📜 **[USER_GUIDE.md](USER_GUIDE.md):** Tizim foydalanuvchisi va servis qo'llanmasi.
