@@ -36,8 +36,20 @@ EDGE_VOICE = "uz-UZ-MadinaNeural"  # O'zbek tili ayol ovozi
 # ============================================================
 from google import genai
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-client = genai.Client(api_key=GEMINI_API_KEY)
+client = None
+
+def get_genai_client():
+    global client
+    if client is not None:
+        return client
+    key = os.getenv("GEMINI_API_KEY", "")
+    if key:
+        try:
+            client = genai.Client(api_key=key)
+            return client
+        except Exception:
+            return None
+    return None
 
 
 class VoiceAssistant:
@@ -137,16 +149,40 @@ Talablar:
 - Markdown va ```html teglari YO'Q, FAQAT HTML KODNI QAYTAR!
 """
         try:
-            response = client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=prompt,
-            )
-            html_code = response.text.strip()
-            for prefix in ["```html", "```"]:
-                if html_code.startswith(prefix):
-                    html_code = html_code[len(prefix):]
-            if html_code.endswith("```"):
-                html_code = html_code[:-3]
+            ai_client = get_genai_client()
+            if ai_client:
+                response = ai_client.models.generate_content(
+                    model="gemini-2.5-flash",
+                    contents=prompt,
+                )
+                html_code = response.text.strip()
+                for prefix in ["```html", "```"]:
+                    if html_code.startswith(prefix):
+                        html_code = html_code[len(prefix):]
+                if html_code.endswith("```"):
+                    html_code = html_code[:-3]
+            else:
+                html_code = f"""<!DOCTYPE html>
+<html lang="uz">
+<head>
+<meta charset="UTF-8"><title>JARVIS Humanoid Dashboard</title>
+<style>
+body {{ background: #0a0c10; color: #00f3ff; font-family: sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }}
+.card {{ background: rgba(18,22,31,0.9); border: 2px solid #00f3ff; border-radius: 16px; padding: 30px; box-shadow: 0 0 20px rgba(0,243,255,0.3); text-align: center; max-width: 500px; }}
+h1 {{ color: #00ff88; font-size: 1.8rem; margin-bottom: 10px; }}
+p {{ color: #e6edf3; font-size: 1.1rem; line-height: 1.5; }}
+.status {{ background: rgba(0,255,136,0.15); border: 1px solid #00ff88; color: #00ff88; padding: 8px 16px; border-radius: 20px; display: inline-block; margin-top: 15px; font-weight: bold; }}
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>🤖 Gumanoid Robot Dashbordi</h1>
+  <p><strong>Topshiriq:</strong> {task_text}</p>
+  <p><strong>AI Natijasi:</strong> {ai_response_text}</p>
+  <div class="status">🟢 Tizim va Robot Holati: Faol</div>
+</div>
+</body>
+</html>"""
 
             view_id = f"view_{int(time.time())}"
             views_dir = os.path.join(os.path.abspath("."), "generated_views")
@@ -194,23 +230,49 @@ Misollar:
 QOIDALAR: Faqat toza JSON. Markdown YO'Q.
 """
         try:
-            response = client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=prompt,
-            )
-            result_text = response.text.strip()
+            ai_client = get_genai_client()
+            if ai_client:
+                response = ai_client.models.generate_content(
+                    model="gemini-2.5-flash",
+                    contents=prompt,
+                )
+                result_text = response.text.strip()
 
-            for prefix in ["```json", "```"]:
-                if result_text.startswith(prefix):
-                    result_text = result_text[len(prefix):]
-            if result_text.endswith("```"):
-                result_text = result_text[:-3]
+                for prefix in ["```json", "```"]:
+                    if result_text.startswith(prefix):
+                        result_text = result_text[len(prefix):]
+                if result_text.endswith("```"):
+                    result_text = result_text[:-3]
 
-            data = json.loads(result_text.strip())
-            cmd = data.get("cmd", "").strip()
-            reply = data.get("response", "Vazifa bajarildi.")
-            cmd_type = data.get("type", "reply")
-            need_visual_ui = data.get("need_visual_ui", False) or generate_ui
+                data = json.loads(result_text.strip())
+                cmd = data.get("cmd", "").strip()
+                reply = data.get("response", "Vazifa bajarildi.")
+                cmd_type = data.get("type", "reply")
+                need_visual_ui = data.get("need_visual_ui", False) or generate_ui
+            else:
+                # Smart fallback parse for basic commands when GEMINI_API_KEY is not set
+                lower_text = text.lower()
+                need_visual_ui = generate_ui
+                if "chrome" in lower_text or "google" in lower_text or "izla" in lower_text:
+                    cmd = "https://www.google.com"
+                    cmd_type = "url"
+                    reply = "Chrome ochilib, so'rovingiz bajarilmoqda!"
+                elif "notepad" in lower_text or "bloknot" in lower_text:
+                    cmd = "notepad"
+                    cmd_type = "app"
+                    reply = "Notepad (Bloknot) ochilmoqda!"
+                elif "telegram" in lower_text:
+                    cmd = "Telegram"
+                    cmd_type = "app"
+                    reply = "Telegram dasturi ochilmoqda!"
+                elif "youtube" in lower_text or "musiqa" in lower_text:
+                    cmd = "https://www.youtube.com"
+                    cmd_type = "url"
+                    reply = "YouTube ochilmoqda!"
+                else:
+                    cmd = ""
+                    cmd_type = "reply"
+                    reply = f"Topshiriq qabul qilindi: {text}"
 
             self.emit_card("💡 AI Tahlili", reply, "ai", {"cmd": cmd, "type": cmd_type})
 
