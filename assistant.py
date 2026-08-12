@@ -282,17 +282,8 @@ p {{ color: #e6edf3; font-size: 1.1rem; line-height: 1.6; margin: 10px 0; }}
             return None
 
     def execute_task(self, text, silent=False, generate_ui=True):
-        """Professional Multi-Stage Task Executor with Full Process Logging"""
+        """Professional Multi-Stage Task Executor"""
         start_time = time.time()
-        process_logs = []
-
-        def log_step(msg):
-            ts = time.strftime("%H:%M:%S")
-            log_entry = f"[{ts}] {msg}"
-            process_logs.append(log_entry)
-            print(f"🔹 [JARVIS CORE TELEMETRY] {log_entry}")
-
-        log_step(f"Vazifa qabul qilindi: '{text}'")
         self.emit_stage("received", f"So'rov qabul qilindi: '{text}'", 10)
         self.emit_card("📌 Yangi Topshiriq", text, "task")
         self.trigger_typing_sfx(duration_sec=1.5)
@@ -309,18 +300,15 @@ Foydalanuvchi/Robot vazifasi: "{text}"
         need_visual_ui = generate_ui
 
         try:
-            log_step("Gemini AI Neural Core tahlili boshlandi")
             self.emit_stage("ai_analysis", "Gemini AI Neural Core buyruqni tahlil qilmoqda...", 35)
             lower_text = text.lower().strip()
 
             # YouTube / Music Autoplay Detection
             if any(k in lower_text for k in ["youtube", "madhiya", "musiqa", "qo'shiq", "muzika", "video", "kuy", "qo'yib ber", "qoyib ber"]):
-                log_step("YouTube / Audio ijro rejimi aniqlandi")
                 yt_url = get_youtube_autoplay_url(text)
                 cmd = f'start "" "{yt_url}"'
                 cmd_type = "cmd"
                 reply = "YouTube platformasida audio va video avtomatik ravishda ijro etilmoqda!"
-                log_step(f"YouTube Avto-ijro URL shakllantirildi: {yt_url}")
             else:
                 result_text = self._call_gemini_models(prompt)
                 if result_text:
@@ -335,9 +323,7 @@ Foydalanuvchi/Robot vazifasi: "{text}"
                     reply = data.get("response", "Vazifa bajarildi.")
                     cmd_type = data.get("type", "cmd")
                     need_visual_ui = data.get("need_visual_ui", False) or generate_ui
-                    log_step(f"AI Model Natijasi: cmd='{cmd}', type='{cmd_type}'")
                 else:
-                    log_step("AI Modellari band, tezkor algoritmlar ishga tushdi")
                     if "chrome" in lower_text or "google" in lower_text or "browser" in lower_text:
                         cmd = "start https://www.google.com"
                         cmd_type = "cmd"
@@ -369,19 +355,15 @@ Foydalanuvchi/Robot vazifasi: "{text}"
 
             self.emit_card("💡 AI Tahlili", reply, "ai", {"cmd": cmd, "type": cmd_type})
             self.speak(reply, silent=silent)
-            log_step("Ovozli bildirishnoma asinxron ishga tushirildi")
 
             view_url = None
             if need_visual_ui:
-                log_step("Dinamik HTML5 HUD generatsiyasi boshlandi")
                 view_url = self.generate_dynamic_html(text, reply)
-                log_step(f"HUD sahifa URL: {view_url}")
 
             # Command execution with output & exit code capture
             cmd_output = ""
             exit_code = 0
             if cmd:
-                log_step(f"Terminal buyrug'i ijrosi: '{cmd}'")
                 self.emit_stage("execution", f"Windows tizim buyrug'i bajarilmoqda: {cmd}", 80)
                 self.trigger_typing_sfx(duration_sec=1.0)
                 
@@ -394,17 +376,14 @@ Foydalanuvchi/Robot vazifasi: "{text}"
                         exit_code = proc.returncode
                     except subprocess.TimeoutExpired:
                         cmd_output = "Buyruq orqa fonda ishga tushirildi."
-                    log_step(f"Buyruq bajarildi (Exit code: {exit_code})")
                     self.emit_card("⚙️ Tizim Buyrug'i Bajarildi", cmd, "cmd", {"output": cmd_output, "exit_code": exit_code})
                 except Exception as ex:
-                    log_step(f"Xatolik buyruq bajarishda: {str(ex)}")
                     self.emit_card("⚠️ Buyruq Bajarish Xatosi", str(ex), "error")
 
             if view_url and not silent:
                 webbrowser.open(view_url)
 
             elapsed_ms = int((time.time() - start_time) * 1000)
-            log_step(f"Vazifa muvaffaqiyatli yakunlandi ({elapsed_ms}ms)")
             self.emit_stage("completed", "Vazifa muvaffaqiyatli yakunlandi", 100)
             if self.socketio:
                 self.socketio.emit('status', {'status': 'idle'})
@@ -420,12 +399,10 @@ Foydalanuvchi/Robot vazifasi: "{text}"
                 "exit_code": exit_code,
                 "generated_view_url": view_url,
                 "execution_time_ms": elapsed_ms,
-                "process_logs": process_logs,
                 "timestamp": int(time.time())
             }
 
         except Exception as e:
-            log_step(f"Kritik Xatolik: {str(e)}")
             self.emit_card("Xatolik", str(e), "error")
             self.emit_stage("failed", f"Xatolik: {str(e)}", 100)
             if self.socketio:
@@ -434,7 +411,6 @@ Foydalanuvchi/Robot vazifasi: "{text}"
                 "status": "error",
                 "task": text,
                 "error": str(e),
-                "process_logs": process_logs,
                 "timestamp": int(time.time())
             }
 

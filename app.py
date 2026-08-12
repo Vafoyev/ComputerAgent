@@ -4,6 +4,7 @@ import time
 import os
 import sys
 import platform
+import random
 from flask import Flask, render_template, request, jsonify, send_from_directory
 import engineio.async_drivers.threading
 from flask_socketio import SocketIO
@@ -21,6 +22,9 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 START_TIME = time.time()
 assistant = VoiceAssistant(socketio)
 
+TASKS_STORE = {}
+tasks_lock = threading.Lock()
+
 # ------------------------------------------------------------
 #  Veb Interfeys Sahifalari
 # ------------------------------------------------------------
@@ -29,51 +33,45 @@ def index():
     return render_template('index.html')
 
 @app.route('/view/<view_id>')
-def serve_generated_view(view_id):
-    """Gemini AI tomonidan yaratilgan Dinamik HTML sahifani namoyish etish"""
+def view_generated_page(view_id):
+    """AI tomonidan yaratilgan dinamik HTML5 HUD sahifalarini ko'rsatish"""
     views_dir = os.path.join(os.path.abspath("."), "generated_views")
     filename = f"{view_id}.html"
-    if not filename.endswith('.html'):
-        filename += '.html'
-    if os.path.exists(os.path.join(views_dir, filename)):
+    file_path = os.path.join(views_dir, filename)
+    if os.path.exists(file_path):
         return send_from_directory(views_dir, filename)
-    return jsonify({"error": "Dynamic view not found", "view_id": view_id}), 404
+    return "<h1>404 — Vizual Dashboard Topilmadi</h1>", 404
 
 # ------------------------------------------------------------
-#  🤖 ENTERPRISE HUMANOID ROBOT REST API ENDPOINTS
+#  GUMANOID ROBOT API ENDPOINTLARI (ENTERPRISE ASYNC)
 # ------------------------------------------------------------
-@app.route('/api/status', methods=['GET'])
-def api_status():
-    """Gumanoid robot servis diagnostikasi (Extended Health Check)"""
-    uptime_sec = int(time.time() - START_TIME)
+@app.route('/api/health', methods=['GET'])
+def api_health():
+    """Robot va Tizim Salomatlik Statusi"""
     views_dir = os.path.join(os.path.abspath("."), "generated_views")
-    total_views = len([f for f in os.listdir(views_dir) if f.endswith('.html')]) if os.path.exists(views_dir) else 0
+    total_views = len(os.listdir(views_dir)) if os.path.exists(views_dir) else 0
 
     return jsonify({
         "status": "online",
         "service": "JARVIS Neural Core Robot Controller",
         "version": "3.0.0-Enterprise",
         "mode": "headful/silent_api",
-        "dynamic_html_generator": "active",
         "os": platform.system(),
         "platform": platform.platform(),
         "python_version": platform.python_version(),
+        "dynamic_html_generator": "active",
         "total_generated_views": total_views,
-        "uptime_seconds": uptime_sec,
+        "uptime_seconds": int(time.time() - START_TIME),
         "timestamp": int(time.time())
     }), 200
 
 @app.route('/api/task', methods=['POST'])
 def api_task():
     """
-    Gumanoid robotdan vazifani qabul qilish uchun asosiy REST API.
-    JSON Payload:
-    {
-       "task": "Chrome och va robotehnika izla",
-       "robot_id": "gumanoid_robot_01",
-       "silent": true,
-       "generate_ui": true
-    }
+    Asinxron Enterprise Robot Task Submission Endpoint
+    
+    Vazifani qabul qilib, zudlik bilan HTTP 202 status va task_id qaytaradi.
+    Tizim vazifani orqa fonda (background thread) xavfsiz bajaradi.
     """
     data = request.get_json(force=True, silent=True) or {}
     task_text = data.get("task", "").strip()
@@ -87,13 +85,60 @@ def api_task():
             "message": "Task parameter is required in JSON body"
         }), 400
 
-    print(f"[ROBOT API v3.0] Robot ({robot_id}) Vazifasi: {task_text}")
-    assistant.emit_card("🤖 Gumanoid Robot So'rovi", f"Robot ID: {robot_id} | Vazifa: {task_text}", "info")
+    task_id = f"task_{int(time.time())}_{random.randint(1000, 9999)}"
+    now_ts = int(time.time())
 
-    result = assistant.execute_task(task_text, silent=silent, generate_ui=generate_ui)
-    result["robot_id"] = robot_id
+    initial_task_data = {
+        "task_id": task_id,
+        "robot_id": robot_id,
+        "task": task_text,
+        "status": "processing",
+        "process_logs": [f"[{time.strftime('%H:%M:%S')}] Task qabul qilindi va asinxron navbatga qo'yildi"],
+        "timestamp": now_ts
+    }
 
-    return jsonify(result), 200
+    with tasks_lock:
+        TASKS_STORE[task_id] = initial_task_data
+
+    print(f"[ROBOT API v3.0] Async Task Queued ({task_id}): {task_text}")
+    assistant.emit_card("🤖 Gumanoid Robot So'rovi", f"Task ID: {task_id} | Robot ID: {robot_id} | Vazifa: {task_text}", "info")
+
+    def _worker():
+        res = assistant.execute_task(task_text, silent=silent, generate_ui=generate_ui)
+        res["task_id"] = task_id
+        res["robot_id"] = robot_id
+        with tasks_lock:
+            TASKS_STORE[task_id] = res
+
+    threading.Thread(target=_worker, daemon=True).start()
+
+    return jsonify({
+        "status": "processing",
+        "task_id": task_id,
+        "robot_id": robot_id,
+        "task": task_text,
+        "message": "Task queued and executing asynchronously in background",
+        "status_url": f"/api/task/status/{task_id}",
+        "timestamp": now_ts
+    }), 202
+
+@app.route('/api/task/status/<task_id>', methods=['GET'])
+def api_task_status(task_id):
+    """
+    Task id bo'yicha vazifaning joriy statusi va natijalarini qaytaruvchi endpoint
+    """
+    with tasks_lock:
+        task_info = TASKS_STORE.get(task_id)
+
+    if not task_info:
+        return jsonify({
+            "status": "not_found",
+            "task_id": task_id,
+            "message": f"Task ID '{task_id}' topilmadi",
+            "timestamp": int(time.time())
+        }), 404
+
+    return jsonify(task_info), 200
 
 @app.route('/api/cmd', methods=['POST'])
 def api_cmd():
