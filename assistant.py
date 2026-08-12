@@ -322,7 +322,7 @@ Foydalanuvchi/Robot vazifasi: "{text}"
                     cmd = data.get("cmd", "").strip()
                     reply = data.get("response", "Vazifa bajarildi.")
                     cmd_type = data.get("type", "cmd")
-                    need_visual_ui = data.get("need_visual_ui", False) or generate_ui
+                    need_visual_ui = data.get("need_visual_ui", False) if generate_ui else False
                 else:
                     if "chrome" in lower_text or "google" in lower_text or "browser" in lower_text:
                         cmd = "start https://www.google.com"

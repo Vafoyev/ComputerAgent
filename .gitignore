@@ -1,7 +1,30 @@
+# Muhitlar va Virtual enviroment
 venv/
-build/
-dist/
+.env
+
+# Kesh fayllari (Python)
 __pycache__/
 *.pyc
-.env
+*.pyo
+*.pyd
+.pytest_cache/
+
+# IDE va muharrir fayllari
+.idea/
+.vscode/
+*.swp
+
+# Build, distributsiya va o'rnatuvchi paketlar
+build/
+dist/
+Output/
 *.spec
+*.egg-info/
+*.msi
+
+# Vaqtinchalik va avtomatik yaratiladigan fayllar
+generated_views/
+test_client.html
+
+# Boshqa loglar
+*.log
