@@ -8,6 +8,9 @@ import tempfile
 import time
 import threading
 import subprocess
+import urllib.parse
+import urllib.request
+import re
 
 # ============================================================
 #  Ovoz chiqarish (TTS Backend)
@@ -95,23 +98,37 @@ TALABLAR:
 4. Markdown teglari (```html) bo'lmasin, toza HTML kodini ber!
 """
 
+def get_youtube_autoplay_url(query):
+    """YouTube-da so'ralgan qo'shiq/videoni avtomatik qidirib, birinchi videoni avto-ijro (&autoplay=1) bilan ochadi"""
+    try:
+        clean_query = query.lower().replace("youtube", "").replace("youtubeda", "").replace("youtube'da", "").replace("qo'yib ber", "").replace("qoyib ber", "").replace("qo'y", "").replace("qoy", "").replace("eshitaylik", "").replace("ijro et", "").replace("ochib ber", "").replace("och", "").strip()
+        if not clean_query:
+            clean_query = "O'zbekiston madhiyasi"
+            
+        encoded_query = urllib.parse.quote_plus(clean_query)
+        search_url = f"https://www.youtube.com/results?search_query={encoded_query}"
+        req = urllib.request.Request(search_url, headers={'User-Agent': 'Mozilla/5.0'})
+        html = urllib.request.urlopen(req, timeout=3).read().decode()
+        vids = re.findall(r'/watch\?v=([a-zA-Z0-9_-]{11})', html)
+        if vids:
+            return f"https://www.youtube.com/watch?v={vids[0]}&autoplay=1"
+        return search_url
+    except Exception:
+        return f"https://www.youtube.com/results?search_query={urllib.parse.quote_plus(query)}"
 
 class VoiceAssistant:
     def __init__(self, socketio):
         self.socketio = socketio
-        self.recognizer = sr.Recognizer()
         self.is_running = False
+        self.is_listening = False
+        self.recognizer = sr.Recognizer()
         self._lock = threading.Lock()
 
-        if TTS_BACKEND == "pyttsx3":
-            self.engine = pyttsx3.init()
-            self.engine.setProperty('rate', 150)
-
-    def emit_card(self, title, message, card_type="task", details=None):
-        """Vizual Dashboard uchun ma'lumot uzatish"""
+    def emit_card(self, title, content, card_type="info", details=None):
+        """Web UI uchun real-vaqt rejimida karta xabari yuborish"""
         payload = {
             "title": title,
-            "message": message,
+            "content": content,
             "type": card_type,
             "details": details or {},
             "timestamp": time.strftime("%H:%M:%S")
@@ -135,47 +152,35 @@ class VoiceAssistant:
             self.socketio.emit('typing_sfx', {'duration': duration_sec})
 
     def speak(self, text, silent=False):
-        """Ovozda aytish (Robot API rejimida silent=True bo'lganda ovozsiz)"""
+        """Ovozda aytish (Asinxron background thread — HTTP so'rovlarini to'sib qo'ymaydi)"""
         if silent:
             return
 
         self.emit_card("JARVIS Ovoz", text, "ai")
-        try:
-            if TTS_BACKEND == "edge":
-                self._speak_edge(text)
-            elif TTS_BACKEND == "gtts":
-                self._speak_gtts(text)
-            else:
-                self.engine.say(text)
-                self.engine.runAndWait()
-        except Exception as e:
-            self.emit_card("Ovoz Xatosi", str(e), "error")
-
-    def _play_mp3(self, path):
-        pygame.mixer.music.load(path)
-        pygame.mixer.music.play()
-        while pygame.mixer.music.get_busy():
-            time.sleep(0.05)
-        pygame.mixer.music.unload()
-        try:
-            os.remove(path)
-        except Exception:
-            pass
+        def _do_speak():
+            try:
+                if TTS_BACKEND == "edge":
+                    self._speak_edge(text)
+                elif TTS_BACKEND == "gtts":
+                    self._speak_gtts(text)
+                else:
+                    self._speak_pyttsx3(text)
+            except Exception as e:
+                self.emit_card("Ovoz Chiqarish Xatosi", str(e), "warning")
+        
+        threading.Thread(target=_do_speak, daemon=True).start()
 
     def _speak_edge(self, text):
         try:
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as f:
-                tmp_path = f.name
-
-            async def _gen():
+            async def _main():
                 communicate = edge_tts.Communicate(text, EDGE_VOICE)
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as f:
+                    tmp_path = f.name
                 await communicate.save(tmp_path)
+                return tmp_path
 
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            loop.run_until_complete(_gen())
-            loop.close()
-            self._play_mp3(tmp_path)
+            tmp_mp3 = asyncio.run(_main())
+            self._play_mp3(tmp_mp3)
         except Exception as e:
             self.emit_card("Edge-TTS Xatosi", str(e), "error")
             self._speak_gtts(text, lang='ru')
@@ -186,6 +191,22 @@ class VoiceAssistant:
             tmp_path = f.name
         gTTS(text=text, lang=lang).save(tmp_path)
         self._play_mp3(tmp_path)
+
+    def _speak_pyttsx3(self, text):
+        engine = pyttsx3.init()
+        engine.say(text)
+        engine.runAndWait()
+
+    def _play_mp3(self, file_path):
+        try:
+            pygame.mixer.music.load(file_path)
+            pygame.mixer.music.play()
+            while pygame.mixer.music.get_busy():
+                time.sleep(0.1)
+            pygame.mixer.music.unload()
+            os.remove(file_path)
+        except Exception:
+            pass
 
     def _call_gemini_models(self, prompt):
         ai_client = get_genai_client()
@@ -261,8 +282,17 @@ p {{ color: #e6edf3; font-size: 1.1rem; line-height: 1.6; margin: 10px 0; }}
             return None
 
     def execute_task(self, text, silent=False, generate_ui=True):
-        """Professional Multi-Stage Task Executor"""
+        """Professional Multi-Stage Task Executor with Full Process Logging"""
         start_time = time.time()
+        process_logs = []
+
+        def log_step(msg):
+            ts = time.strftime("%H:%M:%S")
+            log_entry = f"[{ts}] {msg}"
+            process_logs.append(log_entry)
+            print(f"🔹 [JARVIS CORE TELEMETRY] {log_entry}")
+
+        log_step(f"Vazifa qabul qilindi: '{text}'")
         self.emit_stage("received", f"So'rov qabul qilindi: '{text}'", 10)
         self.emit_card("📌 Yangi Topshiriq", text, "task")
         self.trigger_typing_sfx(duration_sec=1.5)
@@ -279,67 +309,79 @@ Foydalanuvchi/Robot vazifasi: "{text}"
         need_visual_ui = generate_ui
 
         try:
+            log_step("Gemini AI Neural Core tahlili boshlandi")
             self.emit_stage("ai_analysis", "Gemini AI Neural Core buyruqni tahlil qilmoqda...", 35)
-            result_text = self._call_gemini_models(prompt)
-            if result_text:
-                for prefix in ["```json", "```"]:
-                    if result_text.startswith(prefix):
-                        result_text = result_text[len(prefix):]
-                if result_text.endswith("```"):
-                    result_text = result_text[:-3]
+            lower_text = text.lower().strip()
 
-                data = json.loads(result_text.strip())
-                cmd = data.get("cmd", "").strip()
-                reply = data.get("response", "Vazifa bajarildi.")
-                cmd_type = data.get("type", "cmd")
-                need_visual_ui = data.get("need_visual_ui", False) or generate_ui
+            # YouTube / Music Autoplay Detection
+            if any(k in lower_text for k in ["youtube", "madhiya", "musiqa", "qo'shiq", "muzika", "video", "kuy", "qo'yib ber", "qoyib ber"]):
+                log_step("YouTube / Audio ijro rejimi aniqlandi")
+                yt_url = get_youtube_autoplay_url(text)
+                cmd = f'start "" "{yt_url}"'
+                cmd_type = "cmd"
+                reply = "YouTube platformasida audio va video avtomatik ravishda ijro etilmoqda!"
+                log_step(f"YouTube Avto-ijro URL shakllantirildi: {yt_url}")
             else:
-                lower_text = text.lower().strip()
-                need_visual_ui = generate_ui
-                if "chrome" in lower_text or "google" in lower_text or "browser" in lower_text or "browserni och" in lower_text:
-                    cmd = "start https://www.google.com"
-                    cmd_type = "cmd"
-                    reply = "Chrome va Google brauzeri ochilmoqda!"
-                elif "notepad" in lower_text or "bloknot" in lower_text:
-                    cmd = "start notepad"
-                    cmd_type = "cmd"
-                    reply = "Notepad (Bloknot) dasturi ochilmoqda!"
-                elif "kalkulyator" in lower_text or "calc" in lower_text:
-                    cmd = "start calc"
-                    cmd_type = "cmd"
-                    reply = "Kalkulyator dasturi ochilmoqda!"
-                elif "telegram" in lower_text:
-                    cmd = "start Telegram"
-                    cmd_type = "cmd"
-                    reply = "Telegram dasturi ochilmoqda!"
-                elif "youtube" in lower_text or "musiqa" in lower_text:
-                    cmd = "start https://www.youtube.com"
-                    cmd_type = "cmd"
-                    reply = "YouTube platformasi ochilmoqda!"
-                elif "cmd" in lower_text or "terminal" in lower_text or "command" in lower_text:
-                    cmd = "start cmd"
-                    cmd_type = "cmd"
-                    reply = "Windows Command Prompt (CMD) ochilmoqda!"
-                elif "explorer" in lower_text or "papka" in lower_text or "fayl" in lower_text:
-                    cmd = "explorer"
-                    cmd_type = "cmd"
-                    reply = "Windows Fayl Explorer papkasi ochilmoqda!"
+                result_text = self._call_gemini_models(prompt)
+                if result_text:
+                    for prefix in ["```json", "```"]:
+                        if result_text.startswith(prefix):
+                            result_text = result_text[len(prefix):]
+                    if result_text.endswith("```"):
+                        result_text = result_text[:-3]
+
+                    data = json.loads(result_text.strip())
+                    cmd = data.get("cmd", "").strip()
+                    reply = data.get("response", "Vazifa bajarildi.")
+                    cmd_type = data.get("type", "cmd")
+                    need_visual_ui = data.get("need_visual_ui", False) or generate_ui
+                    log_step(f"AI Model Natijasi: cmd='{cmd}', type='{cmd_type}'")
                 else:
-                    cmd = text.strip()
-                    cmd_type = "cmd"
-                    reply = f"Topshiriq bajarilmoqda: {text}"
+                    log_step("AI Modellari band, tezkor algoritmlar ishga tushdi")
+                    if "chrome" in lower_text or "google" in lower_text or "browser" in lower_text:
+                        cmd = "start https://www.google.com"
+                        cmd_type = "cmd"
+                        reply = "Chrome va Google brauzeri ochilmoqda!"
+                    elif "notepad" in lower_text or "bloknot" in lower_text:
+                        cmd = "start notepad"
+                        cmd_type = "cmd"
+                        reply = "Notepad (Bloknot) dasturi ochilmoqda!"
+                    elif "kalkulyator" in lower_text or "calc" in lower_text:
+                        cmd = "start calc"
+                        cmd_type = "cmd"
+                        reply = "Kalkulyator dasturi ochilmoqda!"
+                    elif "telegram" in lower_text:
+                        cmd = "start Telegram"
+                        cmd_type = "cmd"
+                        reply = "Telegram dasturi ochilmoqda!"
+                    elif "cmd" in lower_text or "terminal" in lower_text or "command" in lower_text:
+                        cmd = "start cmd"
+                        cmd_type = "cmd"
+                        reply = "Windows Command Prompt (CMD) ochilmoqda!"
+                    elif "explorer" in lower_text or "papka" in lower_text or "fayl" in lower_text:
+                        cmd = "explorer"
+                        cmd_type = "cmd"
+                        reply = "Windows Fayl Explorer papkasi ochilmoqda!"
+                    else:
+                        cmd = text.strip()
+                        cmd_type = "cmd"
+                        reply = f"Topshiriq bajarilmoqda: {text}"
 
             self.emit_card("💡 AI Tahlili", reply, "ai", {"cmd": cmd, "type": cmd_type})
             self.speak(reply, silent=silent)
+            log_step("Ovozli bildirishnoma asinxron ishga tushirildi")
 
             view_url = None
             if need_visual_ui:
+                log_step("Dinamik HTML5 HUD generatsiyasi boshlandi")
                 view_url = self.generate_dynamic_html(text, reply)
+                log_step(f"HUD sahifa URL: {view_url}")
 
             # Command execution with output & exit code capture
             cmd_output = ""
             exit_code = 0
             if cmd:
+                log_step(f"Terminal buyrug'i ijrosi: '{cmd}'")
                 self.emit_stage("execution", f"Windows tizim buyrug'i bajarilmoqda: {cmd}", 80)
                 self.trigger_typing_sfx(duration_sec=1.0)
                 
@@ -352,14 +394,17 @@ Foydalanuvchi/Robot vazifasi: "{text}"
                         exit_code = proc.returncode
                     except subprocess.TimeoutExpired:
                         cmd_output = "Buyruq orqa fonda ishga tushirildi."
+                    log_step(f"Buyruq bajarildi (Exit code: {exit_code})")
                     self.emit_card("⚙️ Tizim Buyrug'i Bajarildi", cmd, "cmd", {"output": cmd_output, "exit_code": exit_code})
                 except Exception as ex:
+                    log_step(f"Xatolik buyruq bajarishda: {str(ex)}")
                     self.emit_card("⚠️ Buyruq Bajarish Xatosi", str(ex), "error")
 
             if view_url and not silent:
                 webbrowser.open(view_url)
 
             elapsed_ms = int((time.time() - start_time) * 1000)
+            log_step(f"Vazifa muvaffaqiyatli yakunlandi ({elapsed_ms}ms)")
             self.emit_stage("completed", "Vazifa muvaffaqiyatli yakunlandi", 100)
             if self.socketio:
                 self.socketio.emit('status', {'status': 'idle'})
@@ -375,10 +420,12 @@ Foydalanuvchi/Robot vazifasi: "{text}"
                 "exit_code": exit_code,
                 "generated_view_url": view_url,
                 "execution_time_ms": elapsed_ms,
+                "process_logs": process_logs,
                 "timestamp": int(time.time())
             }
 
         except Exception as e:
+            log_step(f"Kritik Xatolik: {str(e)}")
             self.emit_card("Xatolik", str(e), "error")
             self.emit_stage("failed", f"Xatolik: {str(e)}", 100)
             if self.socketio:
@@ -387,6 +434,7 @@ Foydalanuvchi/Robot vazifasi: "{text}"
                 "status": "error",
                 "task": text,
                 "error": str(e),
+                "process_logs": process_logs,
                 "timestamp": int(time.time())
             }
 
