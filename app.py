@@ -15,7 +15,7 @@ def resource_path(relative_path):
 
 app = Flask(__name__, template_folder=resource_path('templates'), static_folder=resource_path('static'))
 app.config['SECRET_KEY'] = 'jarvis-robot-neural-secret-2026'
-socketio = SocketIO(app, cors_allowed_origins="*")
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
 START_TIME = time.time()
 assistant = VoiceAssistant(socketio)
