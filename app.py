@@ -5,6 +5,7 @@ import os
 import sys
 import platform
 from flask import Flask, render_template, request, jsonify, send_from_directory
+import engineio.async_drivers.threading
 from flask_socketio import SocketIO
 from assistant import VoiceAssistant
 
