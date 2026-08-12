@@ -116,20 +116,23 @@ class VoiceAssistant:
             "details": details or {},
             "timestamp": time.strftime("%H:%M:%S")
         }
-        self.socketio.emit('card', payload)
+        if self.socketio:
+            self.socketio.emit('card', payload)
 
     def emit_stage(self, stage_name, description, progress_pct=0):
         """Bosqichma-bosqich jarayon telemetriyasi"""
-        self.socketio.emit('stage_update', {
-            "stage": stage_name,
-            "description": description,
-            "progress": progress_pct,
-            "timestamp": time.strftime("%H:%M:%S")
-        })
+        if self.socketio:
+            self.socketio.emit('stage_update', {
+                "stage": stage_name,
+                "description": description,
+                "progress": progress_pct,
+                "timestamp": time.strftime("%H:%M:%S")
+            })
 
     def trigger_typing_sfx(self, duration_sec=1.5):
         """Klaviatura 'tq-tq-tq' sado efektini ishga tushirish"""
-        self.socketio.emit('typing_sfx', {'duration': duration_sec})
+        if self.socketio:
+            self.socketio.emit('typing_sfx', {'duration': duration_sec})
 
     def speak(self, text, silent=False):
         """Ovozda aytish (Robot API rejimida silent=True bo'lganda ovozsiz)"""
@@ -184,24 +187,32 @@ class VoiceAssistant:
         gTTS(text=text, lang=lang).save(tmp_path)
         self._play_mp3(tmp_path)
 
+    def _call_gemini_models(self, prompt):
+        ai_client = get_genai_client()
+        if not ai_client:
+            return None
+        models_to_try = ["gemini-2.0-flash", "gemini-1.5-flash"]
+        for m in models_to_try:
+            try:
+                res = ai_client.models.generate_content(model=m, contents=prompt)
+                if res and res.text:
+                    return res.text.strip()
+            except Exception:
+                continue
+        return None
+
     def generate_dynamic_html(self, task_text, ai_response_text):
-        """Dynamic HTML Generator"""
-        self.emit_stage("html_generation", "AI Dinamik HTML WebView interfeysi yaratmoqda...", 50)
-        self.trigger_typing_sfx(duration_sec=2.0)
-
-        prompt = f"""{HTML_GENERATOR_SYSTEM_PROMPT}
-
-Topshiriq: "{task_text}"
-AI Tahlil Xulosasi: "{ai_response_text}"
-"""
+        """AI orqali gumanoid robot uchun dinamik HTML5 HUD yaratadi"""
         try:
-            ai_client = get_genai_client()
-            if ai_client:
-                response = ai_client.models.generate_content(
-                    model="gemini-2.5-flash",
-                    contents=prompt,
-                )
-                html_code = response.text.strip()
+            prompt = f"""Sen Cyberpunk va Sci-Fi gumanoid robot interfeyslari bo'yicha ekspert dizaynersan.
+Vazifa: "{task_text}"
+AI javobi: "{ai_response_text}"
+
+Gumanoid robot interfeysi uchun faqat toza, muxtasar HTML va inline CSS tayyorla. Hech qanday markdown belgilari ko'rsatma. FAQAT <html> bilan boshlanib </html> bilan tugaydigan kod qaytar."""
+            
+            result_text = self._call_gemini_models(prompt)
+            if result_text:
+                html_code = result_text
                 for prefix in ["```html", "```"]:
                     if html_code.startswith(prefix):
                         html_code = html_code[len(prefix):]
@@ -255,22 +266,22 @@ p {{ color: #e6edf3; font-size: 1.1rem; line-height: 1.6; margin: 10px 0; }}
         self.emit_stage("received", f"So'rov qabul qilindi: '{text}'", 10)
         self.emit_card("📌 Yangi Topshiriq", text, "task")
         self.trigger_typing_sfx(duration_sec=1.5)
-        self.socketio.emit('status', {'status': 'processing'})
+        if self.socketio:
+            self.socketio.emit('status', {'status': 'processing'})
 
         prompt = f"""{COMMAND_DISPATCHER_SYSTEM_PROMPT}
 
 Foydalanuvchi/Robot vazifasi: "{text}"
 """
+        cmd = ""
+        reply = ""
+        cmd_type = "cmd"
+        need_visual_ui = generate_ui
+
         try:
             self.emit_stage("ai_analysis", "Gemini AI Neural Core buyruqni tahlil qilmoqda...", 35)
-            ai_client = get_genai_client()
-            if ai_client:
-                response = ai_client.models.generate_content(
-                    model="gemini-2.5-flash",
-                    contents=prompt,
-                )
-                result_text = response.text.strip()
-
+            result_text = self._call_gemini_models(prompt)
+            if result_text:
                 for prefix in ["```json", "```"]:
                     if result_text.startswith(prefix):
                         result_text = result_text[len(prefix):]
@@ -280,31 +291,43 @@ Foydalanuvchi/Robot vazifasi: "{text}"
                 data = json.loads(result_text.strip())
                 cmd = data.get("cmd", "").strip()
                 reply = data.get("response", "Vazifa bajarildi.")
-                cmd_type = data.get("type", "reply")
+                cmd_type = data.get("type", "cmd")
                 need_visual_ui = data.get("need_visual_ui", False) or generate_ui
             else:
-                lower_text = text.lower()
+                lower_text = text.lower().strip()
                 need_visual_ui = generate_ui
-                if "chrome" in lower_text or "google" in lower_text or "izla" in lower_text:
-                    cmd = "https://www.google.com"
-                    cmd_type = "url"
-                    reply = "Chrome ochilib, so'rovingiz bajarilmoqda!"
+                if "chrome" in lower_text or "google" in lower_text or "browser" in lower_text or "browserni och" in lower_text:
+                    cmd = "start https://www.google.com"
+                    cmd_type = "cmd"
+                    reply = "Chrome va Google brauzeri ochilmoqda!"
                 elif "notepad" in lower_text or "bloknot" in lower_text:
-                    cmd = "notepad"
-                    cmd_type = "app"
-                    reply = "Notepad (Bloknot) ochilmoqda!"
+                    cmd = "start notepad"
+                    cmd_type = "cmd"
+                    reply = "Notepad (Bloknot) dasturi ochilmoqda!"
+                elif "kalkulyator" in lower_text or "calc" in lower_text:
+                    cmd = "start calc"
+                    cmd_type = "cmd"
+                    reply = "Kalkulyator dasturi ochilmoqda!"
                 elif "telegram" in lower_text:
-                    cmd = "Telegram"
-                    cmd_type = "app"
+                    cmd = "start Telegram"
+                    cmd_type = "cmd"
                     reply = "Telegram dasturi ochilmoqda!"
                 elif "youtube" in lower_text or "musiqa" in lower_text:
-                    cmd = "https://www.youtube.com"
-                    cmd_type = "url"
-                    reply = "YouTube ochilmoqda!"
+                    cmd = "start https://www.youtube.com"
+                    cmd_type = "cmd"
+                    reply = "YouTube platformasi ochilmoqda!"
+                elif "cmd" in lower_text or "terminal" in lower_text or "command" in lower_text:
+                    cmd = "start cmd"
+                    cmd_type = "cmd"
+                    reply = "Windows Command Prompt (CMD) ochilmoqda!"
+                elif "explorer" in lower_text or "papka" in lower_text or "fayl" in lower_text:
+                    cmd = "explorer"
+                    cmd_type = "cmd"
+                    reply = "Windows Fayl Explorer papkasi ochilmoqda!"
                 else:
-                    cmd = ""
-                    cmd_type = "reply"
-                    reply = f"Topshiriq qabul qilindi: {text}"
+                    cmd = text.strip()
+                    cmd_type = "cmd"
+                    reply = f"Topshiriq bajarilmoqda: {text}"
 
             self.emit_card("💡 AI Tahlili", reply, "ai", {"cmd": cmd, "type": cmd_type})
             self.speak(reply, silent=silent)
@@ -319,41 +342,27 @@ Foydalanuvchi/Robot vazifasi: "{text}"
             if cmd:
                 self.emit_stage("execution", f"Windows tizim buyrug'i bajarilmoqda: {cmd}", 80)
                 self.trigger_typing_sfx(duration_sec=1.0)
-                if cmd_type == "url":
-                    target_url = cmd
-                    if target_url.lower().startswith("start "):
-                        target_url = target_url[6:].strip()
-                    proc = subprocess.Popen(f'start "" "{target_url}"', shell=True)
-                    self.emit_card("🌐 URL Ochildi", target_url, "cmd")
-                elif cmd_type == "app":
-                    try:
-                        import pyautogui
-                        pyautogui.press('win')
-                        time.sleep(0.4)
-                        pyautogui.write(cmd, interval=0.04)
-                        time.sleep(0.4)
-                        pyautogui.press('enter')
-                        self.emit_card("🚀 Dastur Ochildi", cmd, "cmd")
-                    except Exception:
-                        ps_script = f"(New-Object -ComObject WScript.Shell).SendKeys('^{{ESC}}'); Start-Sleep -Milliseconds 400; (New-Object -ComObject WScript.Shell).SendKeys('{cmd}'); Start-Sleep -Milliseconds 400; (New-Object -ComObject WScript.Shell).SendKeys('{{ENTER}}')"
-                        subprocess.Popen(f'powershell -c "{ps_script}"', shell=True)
-                        self.emit_card("🚀 PowerShell bilan ochildi", cmd, "cmd")
-                elif cmd_type == "cmd":
+                
+                # Direct subprocess execution for Windows CMD / PowerShell
+                try:
                     proc = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
                     try:
                         stdout, stderr = proc.communicate(timeout=5)
                         cmd_output = stdout.strip() or stderr.strip()
                         exit_code = proc.returncode
                     except subprocess.TimeoutExpired:
-                        cmd_output = "Command started in background"
-                    self.emit_card("⚙️ Tizim Buyrug'i Bajarildi", cmd, "cmd", {"output": cmd_output})
+                        cmd_output = "Buyruq orqa fonda ishga tushirildi."
+                    self.emit_card("⚙️ Tizim Buyrug'i Bajarildi", cmd, "cmd", {"output": cmd_output, "exit_code": exit_code})
+                except Exception as ex:
+                    self.emit_card("⚠️ Buyruq Bajarish Xatosi", str(ex), "error")
 
             if view_url and not silent:
                 webbrowser.open(view_url)
 
             elapsed_ms = int((time.time() - start_time) * 1000)
             self.emit_stage("completed", "Vazifa muvaffaqiyatli yakunlandi", 100)
-            self.socketio.emit('status', {'status': 'idle'})
+            if self.socketio:
+                self.socketio.emit('status', {'status': 'idle'})
 
             return {
                 "status": "success",
@@ -372,7 +381,8 @@ Foydalanuvchi/Robot vazifasi: "{text}"
         except Exception as e:
             self.emit_card("Xatolik", str(e), "error")
             self.emit_stage("failed", f"Xatolik: {str(e)}", 100)
-            self.socketio.emit('status', {'status': 'idle'})
+            if self.socketio:
+                self.socketio.emit('status', {'status': 'idle'})
             return {
                 "status": "error",
                 "task": text,
