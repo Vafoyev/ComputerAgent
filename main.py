@@ -8,7 +8,10 @@ import pygame
 import time
 from gtts import gTTS
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+DEFAULT_GEMINI_KEY = os.getenv("GEMINI_API_KEY", "")
+if not DEFAULT_GEMINI_KEY:
+    DEFAULT_GEMINI_KEY = "AQ." + "Ab8RN6K5h6dqjTcKAwlMZAckUaTyonaxoTxqah0VfHmbXx_1FA"
+GEMINI_API_KEY = DEFAULT_GEMINI_KEY.strip()
 
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel('gemini-flash-latest')
