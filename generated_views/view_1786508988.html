@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+<meta charset="UTF-8"><title>JARVIS Humanoid HUD</title>
+<style>
+body { background: #06080e; color: #00f3ff; font-family: 'Segoe UI', Tahoma, sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+.card { background: rgba(14, 20, 32, 0.85); border: 2px solid rgba(0, 243, 255, 0.3); border-radius: 20px; padding: 35px; box-shadow: 0 10px 40px rgba(0,243,255,0.25); text-align: center; max-width: 550px; width: 90%; backdrop-filter: blur(20px); }
+h1 { color: #00ff88; font-size: 2rem; margin-bottom: 12px; letter-spacing: 2px; text-transform: uppercase; }
+p { color: #e6edf3; font-size: 1.1rem; line-height: 1.6; margin: 10px 0; }
+.status-badge { background: rgba(0,255,136,0.15); border: 1px solid #00ff88; color: #00ff88; padding: 10px 20px; border-radius: 30px; display: inline-block; margin-top: 20px; font-weight: bold; text-shadow: 0 0 8px rgba(0,255,136,0.5); }
+.meter { width: 100%; height: 8px; background: rgba(255,255,255,0.1); border-radius: 4px; overflow: hidden; margin-top: 20px; }
+.meter-bar { width: 100%; height: 100%; background: linear-gradient(90deg, #00f3ff, #00ff88); animation: pulse 2s infinite; }
+@keyframes pulse { 0% { opacity: 0.6; } 50% { opacity: 1; } 100% { opacity: 0.6; } }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>🤖 HUMANOID ROBOT HUD</h1>
+  <p><strong>Topshiriq:</strong> Tizim diagnostikasi va kompyuter ish faoliyatini tekshirish dashboardini yarat</p>
+  <p><strong>AI Tahlil:</strong> Topshiriq qabul qilindi: Tizim diagnostikasi va kompyuter ish faoliyatini tekshirish dashboardini yarat</p>
+  <div class="meter"><div class="meter-bar"></div></div>
+  <div class="status-badge">🟢 Tizim va Robot Holati: Sinxronizatsiyada</div>
+</div>
+</body>
+</html>

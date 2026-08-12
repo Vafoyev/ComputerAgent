@@ -191,7 +191,7 @@ class VoiceAssistant:
         ai_client = get_genai_client()
         if not ai_client:
             return None
-        models_to_try = ["gemini-2.0-flash", "gemini-1.5-flash"]
+        models_to_try = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-flash-latest", "gemini-2.5-flash"]
         for m in models_to_try:
             try:
                 res = ai_client.models.generate_content(model=m, contents=prompt)
