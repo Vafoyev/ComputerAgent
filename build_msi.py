@@ -7,11 +7,11 @@ if hasattr(sys.stdout, 'reconfigure'):
 
 def print_header():
     print("=" * 65)
-    print("📦 JARVIS NEURAL CORE — NATIVE WINDOWS MSI GENERATOR (.MSI)")
+    print("📦 JARVIS NEURAL CORE — VALID WINDOWS MSI GENERATOR (.MSI)")
     print("=" * 65)
 
 def build_exe():
-    print("\n[1/2] PyInstaller orqali Standalone Executable (.exe) qurilmoqda...")
+    print("\n[1/2] PyInstaller orqali Executable (.exe) qurilmoqda...")
     cmd = [
         sys.executable, "-m", "PyInstaller",
         "--noconfirm",
@@ -28,8 +28,8 @@ def build_exe():
     print("✅ PyInstaller .exe muvaffaqiyatli qurildi!")
 
 def build_msi_file():
-    print("\n[2/2] Windows Native MSI API (msi.dll) orqali .MSI fayl generatsiya qilinmoqda...")
-    cmd = [sys.executable, "generate_msi.py"]
+    print("\n[2/2] Windows Installer MSILIB orqali yaroqli .MSI fayl generatsiya qilinmoqda...")
+    cmd = [sys.executable, "make_valid_msi.py"]
     res = subprocess.run(cmd)
     if res.returncode != 0:
         print("❌ MSI fayl generatsiyasida xatolik yuz berdi!")
@@ -49,7 +49,7 @@ def main():
     
     msi_path = os.path.abspath("JARVIS_Robot_Controller_v3.0.msi")
     print("\n" + "=" * 65)
-    print("🎉 HAQIQIY WINDOWS MSI INSTALLER FAYLI (.MSI) TAYYOR!")
+    print("🎉 WINDOWS INSTALLER OYNASIDA BEXATO OCHILUVCHI .MSI FAYLI TAYYOR!")
     print(f"📁 {msi_path}")
     print("=" * 65)
 
